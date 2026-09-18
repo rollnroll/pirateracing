@@ -135,9 +135,19 @@
             connectionStatusEl.style.color = "#e74c3c";
         });
 
+        // Управление доступностью PvE кнопки от сервера
+        socket.on('lock_pve', (shouldLock) => {
+            pveBtn.disabled = shouldLock;
+            if (shouldLock) {
+                menuStatusEl.textContent = "Игрок ждет в очереди PvP. Тренировка недоступна.";
+            } else {
+                menuStatusEl.textContent = "";
+            }
+        });
+
         function findPvP() {
             menuStatusEl.textContent = "Ищем живого соперника...";
-            pveBtn.disabled = true; // Жестко блокируем кнопку PvE
+            pveBtn.disabled = true;
             socket.emit('start_pvp');
         }
 
@@ -159,7 +169,6 @@
             addLog(data.message);
         });
 
-        // Мгновенный перевод в PvP (даже если игрок был в PvE или ждал в меню)
         socket.on('switch_to_pvp', (data) => {
             currentRoom = data.room;
             isPvE = false;
