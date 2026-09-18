@@ -72,6 +72,7 @@
 
     <div class="container">
         <h2>🏴‍☠️ Пиратская Дуэль</h2>
+        <!-- Добавили цифровое обозначение игроков сюда -->
         <div id="connection-status" style="font-size: 13px; margin-bottom: 15px;">Подключение к серверу...</div>
 
         <!-- ГЛАВНОЕ МЕНЮ -->
@@ -117,6 +118,7 @@
 
         let currentRoom = null;
         let isPvE = false;
+        let lastKnownPlayers = 1;
 
         function addLog(text) {
             const div = document.createElement('div');
@@ -126,7 +128,7 @@
         }
 
         socket.on('connect', () => {
-            connectionStatusEl.textContent = "🟢 Подключено к серверу";
+            connectionStatusEl.textContent = `🟢 Подключено (Онлайн: ${lastKnownPlayers})`;
             connectionStatusEl.style.color = "#2ecc71";
         });
 
@@ -135,13 +137,15 @@
             connectionStatusEl.style.color = "#e74c3c";
         });
 
-        // Получаем информацию о состоянии сервера и управляем доступностью PvE
         socket.on('global_state', (data) => {
-            // Если в меню и мы еще не начали активную игру
+            lastKnownPlayers = data.totalPlayers;
+            connectionStatusEl.textContent = `🟢 Подключено (Онлайн: ${data.totalPlayers})`;
+            connectionStatusEl.style.color = "#2ecc71";
+
             if (!gameScreen.classList.contains('active')) {
                 if (data.disablePve) {
                     pveBtn.disabled = true;
-                    pveBtn.title = "Режим тренировки заблокирован: есть игроки в очереди или онлайн";
+                    pveBtn.title = "Режим тренировки заблокирован: есть игроки в сети";
                     if (data.waitingCount > 0) {
                         menuStatusEl.textContent = "Игрок ждет в очереди PvP! Нажмите PvP для начала дуэли.";
                     } else {
@@ -153,9 +157,8 @@
                     menuStatusEl.textContent = "Вы один на сервере. Можете тренироваться или ждать соперника.";
                 }
             } else if (isPvE) {
-                // Если игрок сейчас играет в PvE, но на сервер зашел кто-то второй/третий
-                if (data.waitingCount > 0 || data.totalPlayers > 1) {
-                    gameStatusEl.textContent = "Внимание: на сервере появился соперник! Скоро начнется PvP...";
+                if (data.totalPlayers > 1) {
+                    gameStatusEl.textContent = "Внимание: на сервере появился игрок! Нажмите PvP на другом клиенте для старта дуэли.";
                 }
             }
         });
@@ -184,10 +187,9 @@
             addLog(data.message);
         });
 
-        // Мгновенный перевод в PvP (срабатывает и из меню, и прямо во время PvE-разминки!)
         socket.on('switch_to_pvp', (data) => {
             currentRoom = data.room;
-            isPvE = false; // Сбрасываем флаг тренировки
+            isPvE = false;
             
             menuScreen.classList.remove('active');
             gameScreen.classList.add('active');
@@ -235,7 +237,6 @@
             rollBtn.disabled = !isMyTurn;
         });
 
-        // Обработка отключения соперника в PvP
         socket.on('opponent_disconnected', (data) => {
             addLog(data.message);
             gameStatusEl.textContent = "Соперник покинул бой.";
