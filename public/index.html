@@ -117,6 +117,32 @@
             gameStatusEl.textContent = `Соперник выбросил: ${data.result}`;
             addLog(`Соперник сделал ход: выпало ${data.result}`);
         });
+
+        let currentRoom = null;
+
+socket.on('start_game', (data) => {
+    currentRoom = data.room;
+    gameStatusEl.textContent = data.message;
+    addLog(data.message);
+    rollBtn.disabled = false; // Активируем кнопку
+});
+
+function rollDice() {
+    const result = Math.floor(Math.random() * 6) + 1;
+    gameStatusEl.textContent = `Вы выбросили: ${result}. Ждем ход соперника.`;
+    addLog(`Вы сделали ход: выпало ${result}`);
+    
+    rollBtn.disabled = true; // Блокируем кнопку до ответа соперника (по желанию)
+
+    // Передаем результат и комнату на сервер
+    socket.emit('roll_dice', { room: currentRoom, result: result });
+}
+
+socket.on('opponent_rolled', (data) => {
+    gameStatusEl.textContent = `Соперник выбросил: ${data.result}. Ваш ход!`;
+    addLog(`Соперник сделал ход: выпало ${data.result}`);
+    rollBtn.disabled = false; // Снова даем возможность ходить
+});
     </script>
 
 </body>
