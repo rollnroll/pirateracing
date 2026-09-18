@@ -9,48 +9,63 @@ const io = new Server(server);
 app.use(express.static('public'));
 
 let waitingPlayer = null;
-const rooms = {}; // Храним информацию о комнатах и чья сейчас очередь
+const rooms = {};
 
 io.on('connection', (socket) => {
     console.log(`Игрок подключился: ${socket.id}`);
 
-    if (!waitingPlayer) {
-        waitingPlayer = socket;
-        socket.emit('game_status', 'Ожидание второго игрока...');
-    } else {
-        const roomName = `room_${waitingPlayer.id}_${socket.id}`;
-        
-        waitingPlayer.join(roomName);
-        socket.join(roomName);
+    // Игрок выбирает режим "Тренировка с ботом"
+    socket.on('start_pve', () => {
+        // Если этот игрок уже стоял в очереди PvP, убираем его оттуда
+        if (waitingPlayer === socket) {
+            waitingPlayer = null;
+        }
+        socket.emit('pve_started', { message: 'Режим тренировки с ботом активирован!' });
+        console.log(`Игрок ${socket.id} ушел в PvE с ботом`);
+    });
 
-        // Создаем состояние комнаты: первый пошел тот, кто ждал
-        rooms[roomName] = {
-            players: [waitingPlayer.id, socket.id],
-            currentTurn: waitingPlayer.id 
-        };
+    // Игрок выбирает режим "Сразиться с игроком" (PvP)
+    socket.on('start_pvp', () => {
+        if (!waitingPlayer) {
+            // Если никого нет в очереди, этот игрок становится ждущим
+            waitingPlayer = socket;
+            socket.emit('game_status', 'Поиск живого соперника...');
+        } else if (waitingPlayer !== socket) {
+            // Соперник найден! Создаем комнату
+            const player1 = waitingPlayer;
+            const player2 = socket;
+            const roomName = `room_${player1.id}_${player2.id}`;
 
-        // Первому игроку разрешаем ход, второму — запрещаем
-        waitingPlayer.emit('start_game', { room: roomName, message: 'Соперник найден! Ваш ход.', isMyTurn: true });
-        socket.emit('start_game', { room: roomName, message: 'Соперник найден! Ждите ход соперника.', isMyTurn: false });
+            player1.join(roomName);
+            player2.join(roomName);
 
-        waitingPlayer = null;
-    }
+            rooms[roomName] = {
+                players: [player1.id, player2.id],
+                currentTurn: player1.id,
+                isPvP: true
+            };
 
-    // Обработка броска кубика с проверкой очереди на сервере
+            // Если кто-то из них играл с ботом, принудительно переключаем в PvP режим
+            io.to(roomName).emit('switch_to_pvp', {
+                room: roomName,
+                message: 'Соперник найден! Бой начинается.',
+                currentTurn: player1.id
+            });
+
+            waitingPlayer = null;
+        }
+    });
+
+    // Обработка хода в PvP
     socket.on('roll_dice', (data) => {
         const room = rooms[data.room];
         if (!room) return;
 
-        // Жесткая проверка: если сейчас не ход этого игрока — игнорируем запрос!
-        if (room.currentTurn !== socket.id) {
-            return;
-        }
+        if (room.currentTurn !== socket.id) return;
 
-        // Меняем очередь на другого игрока в комнате
         const nextPlayerId = room.players.find(id => id !== socket.id);
         room.currentTurn = nextPlayerId;
 
-        // Рассылаем результаты и информацию о том, чей теперь ход, обоим игрокам
         io.to(data.room).emit('turn_result', {
             rollerId: socket.id,
             result: data.result,
@@ -63,7 +78,7 @@ io.on('connection', (socket) => {
         if (waitingPlayer === socket) {
             waitingPlayer = null;
         }
-        // Очистку комнат при отключении можно будет добавить позже
+        // Здесь также можно добавить уведомление оппоненту, если игрок ливнул во время PvP
     });
 });
 
