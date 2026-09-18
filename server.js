@@ -12,17 +12,38 @@ let waitingPlayer = null;
 const rooms = {};
 const playerModes = {}; 
 
+// Функция для рассылки всем клиентам текущей информации о доступности режимов
+function broadcastGlobalState() {
+    const totalPlayers = io.engine.clientsCount;
+    // Блокируем PvE, если на сервере больше 1 игрока ИЛИ кто-то уже ждет PvP
+    const disablePve = totalPlayers > 1 || waitingPlayer !== null;
+
+    io.emit('global_state', {
+        totalPlayers: totalPlayers,
+        disablePve: disablePve,
+        waitingCount: waitingPlayer ? 1 : 0
+    });
+}
+
 io.on('connection', (socket) => {
     console.log(`Игрок подключился: ${socket.id}`);
     playerModes[socket.id] = 'menu';
 
+    // Сразу сообщаем новому игроку текущую общую обстановку
+    broadcastGlobalState();
+
     // Выбор режима "Тренировка с ботом"
     socket.on('start_pve', () => {
+        // Если вдруг правила изменились, проверяем можно ли играть в PvE
+        if (io.engine.clientsCount > 1 && waitingPlayer !== null) return;
+
         if (waitingPlayer === socket) {
             waitingPlayer = null;
         }
         playerModes[socket.id] = 'pve';
-        socket.emit('pve_started', { message: 'Режим тренировки с ботом активирован!' });
+        socket.emit('pve_started', { message: 'Режим тренировки с ботом активирован! Соперник может найтись в любой момент.' });
+        
+        broadcastGlobalState();
     });
 
     // Выбор режима "Сразиться с игроком"
@@ -34,6 +55,8 @@ io.on('connection', (socket) => {
         if (!waitingPlayer) {
             waitingPlayer = socket;
             socket.emit('game_status', 'Поиск живого соперника...');
+            // Уведомляем остальных, что появился человек в очереди
+            broadcastGlobalState();
         } else {
             const player1 = waitingPlayer;
             const player2 = socket;
@@ -52,6 +75,7 @@ io.on('connection', (socket) => {
                     currentTurn: player1.id
                 };
 
+                // Переводим обоих в PvP (даже если player1 был в PvE или ждал в меню)
                 io.to(roomName).emit('switch_to_pvp', {
                     room: roomName,
                     message: 'Соперник найден! Бой начинается.',
@@ -60,6 +84,7 @@ io.on('connection', (socket) => {
             }
 
             waitingPlayer = null;
+            broadcastGlobalState();
         }
     });
 
@@ -103,6 +128,9 @@ io.on('connection', (socket) => {
         }
 
         delete playerModes[socket.id];
+        
+        // Обновляем состояние для всех оставшихся
+        broadcastGlobalState();
     });
 });
 
