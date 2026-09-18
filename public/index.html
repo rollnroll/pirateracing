@@ -42,6 +42,7 @@
         }
         button:disabled {
             background-color: #555;
+            color: #888;
             cursor: not-allowed;
         }
         button.secondary {
@@ -135,25 +136,28 @@
             connectionStatusEl.style.color = "#e74c3c";
         });
 
-        // Управление доступностью PvE кнопки от сервера
+        // 1. Управление доступностью PvE в зависимости от количества игроков на сервере
         socket.on('lock_pve', (shouldLock) => {
             pveBtn.disabled = shouldLock;
             if (shouldLock) {
-                menuStatusEl.textContent = "Игрок ждет в очереди PvP. Тренировка недоступна.";
+                menuStatusEl.textContent = "В сети есть другие игроки. Доступен только PvP режим.";
             } else {
-                menuStatusEl.textContent = "";
+                menuStatusEl.textContent = "Вы один на сервере. Можно начать тренировку с ботом.";
             }
         });
 
+        // 2. Кнопка PvP для второго игрока (или единственного)
         function findPvP() {
-            menuStatusEl.textContent = "Ищем живого соперника...";
+            menuStatusEl.textContent = "Подключение к матчу...";
             pveBtn.disabled = true;
-            socket.emit('start_pvp');
+            
+            if (isPvE) {
+                // Если первый игрок был в PvE и нажал PvP или подключился второй
+                socket.emit('force_pvp_from_pve');
+            } else {
+                socket.emit('start_pvp');
+            }
         }
-
-        socket.on('game_status', (msg) => {
-            menuStatusEl.textContent = msg;
-        });
 
         function startPvE() {
             isPvE = true;
@@ -169,6 +173,12 @@
             addLog(data.message);
         });
 
+        // Триггер, если первый игрок сидел в PvE, а второй зашел и нажал поиск PvP
+        socket.on('force_switch_to_pvp_trigger', () => {
+            socket.emit('start_pvp');
+        });
+
+        // 3. Плавный перевод обоих в PvP режим
         socket.on('switch_to_pvp', (data) => {
             currentRoom = data.room;
             isPvE = false;
