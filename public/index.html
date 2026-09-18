@@ -135,6 +135,31 @@
             connectionStatusEl.style.color = "#e74c3c";
         });
 
+        // Получаем информацию о состоянии сервера и управляем доступностью PvE
+        socket.on('global_state', (data) => {
+            // Если в меню и мы еще не начали активную игру
+            if (!gameScreen.classList.contains('active')) {
+                if (data.disablePve) {
+                    pveBtn.disabled = true;
+                    pveBtn.title = "Режим тренировки заблокирован: есть игроки в очереди или онлайн";
+                    if (data.waitingCount > 0) {
+                        menuStatusEl.textContent = "Игрок ждет в очереди PvP! Нажмите PvP для начала дуэли.";
+                    } else {
+                        menuStatusEl.textContent = `Игроков онлайн: ${data.totalPlayers}. Доступна только Дуэль.`;
+                    }
+                } else {
+                    pveBtn.disabled = false;
+                    pveBtn.title = "";
+                    menuStatusEl.textContent = "Вы один на сервере. Можете тренироваться или ждать соперника.";
+                }
+            } else if (isPvE) {
+                // Если игрок сейчас играет в PvE, но на сервер зашел кто-то второй/третий
+                if (data.waitingCount > 0 || data.totalPlayers > 1) {
+                    gameStatusEl.textContent = "Внимание: на сервере появился соперник! Скоро начнется PvP...";
+                }
+            }
+        });
+
         function findPvP() {
             menuStatusEl.textContent = "Ищем живого соперника...";
             pveBtn.disabled = true;
@@ -153,15 +178,16 @@
         socket.on('pve_started', (data) => {
             menuScreen.classList.remove('active');
             gameScreen.classList.add('active');
-            modeBadgeEl.textContent = "РЕЖИМ: ТРЕНИРОВКА С БОТОМ";
-            gameStatusEl.textContent = "Ваш ход против бота!";
+            modeBadgeEl.textContent = "РЕЖИМ: ТРЕНИРОВКА С БОТОМ (РАЗМИНКА)";
+            gameStatusEl.textContent = "Ваш ход против бота! Ждем оппонента...";
             rollBtn.disabled = false;
             addLog(data.message);
         });
 
+        // Мгновенный перевод в PvP (срабатывает и из меню, и прямо во время PvE-разминки!)
         socket.on('switch_to_pvp', (data) => {
             currentRoom = data.room;
-            isPvE = false;
+            isPvE = false; // Сбрасываем флаг тренировки
             
             menuScreen.classList.remove('active');
             gameScreen.classList.add('active');
