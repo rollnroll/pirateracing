@@ -10,31 +10,29 @@ app.use(express.static('public'));
 
 let waitingPlayer = null;
 const rooms = {};
-const playerModes = {}; // Следим, кто сейчас в каком режиме ('pve', 'pvp_waiting', 'pvp_playing')
 
 io.on('connection', (socket) => {
     console.log(`Игрок подключился: ${socket.id}`);
-    playerModes[socket.id] = 'menu';
 
-    // Выбор режима "Тренировка с ботом"
+    // Если уже кто-то ждет PvP, сразу скажем новому игроку заблокировать PvE
+    if (waitingPlayer) {
+        socket.emit('lock_pve', true);
+    }
+
     socket.on('start_pve', () => {
-        // Если игрок стоял в очереди PvP, убираем его оттуда
         if (waitingPlayer === socket) {
             waitingPlayer = null;
         }
-        playerModes[socket.id] = 'pve';
         socket.emit('pve_started', { message: 'Режим тренировки с ботом активирован!' });
     });
 
-    // Выбор режима "Сразиться с игроком"
     socket.on('start_pvp', () => {
-        playerModes[socket.id] = 'pvp_waiting';
-
         if (!waitingPlayer) {
             waitingPlayer = socket;
+            // Уведомляем ВСЕХ остальных, что кто-то встал в очередь PvP -> блокируем им PvE
+            socket.broadcast.emit('lock_pve', true);
             socket.emit('game_status', 'Поиск живого соперника...');
         } else if (waitingPlayer !== socket) {
-            // Соперник найден! (даже если кто-то из них был в PvE или ждал)
             const player1 = waitingPlayer;
             const player2 = socket;
             const roomName = `room_${player1.id}_${player2.id}`;
@@ -42,15 +40,12 @@ io.on('connection', (socket) => {
             player1.join(roomName);
             player2.join(roomName);
 
-            playerModes[player1.id] = 'pvp_playing';
-            playerModes[player2.id] = 'pvp_playing';
-
             rooms[roomName] = {
                 players: [player1.id, player2.id],
                 currentTurn: player1.id
             };
 
-            // Переключаем обоих в PvP режим независимо от того, где они были
+            // Соперник найден, сбрасываем блокировку PvE для остальных (если они появятся)
             io.to(roomName).emit('switch_to_pvp', {
                 room: roomName,
                 message: 'Соперник найден! Бой начинается.',
@@ -58,14 +53,14 @@ io.on('connection', (socket) => {
             });
 
             waitingPlayer = null;
+            // Разблокируем PvE для остальных, так как очередь опустела
+            io.emit('lock_pve', false);
         }
     });
 
-    // Бросок кубика в PvP
     socket.on('roll_dice', (data) => {
         const room = rooms[data.room];
         if (!room) return;
-
         if (room.currentTurn !== socket.id) return;
 
         const nextPlayerId = room.players.find(id => id !== socket.id);
@@ -82,8 +77,9 @@ io.on('connection', (socket) => {
         console.log(`Игрок отключился: ${socket.id}`);
         if (waitingPlayer === socket) {
             waitingPlayer = null;
+            // Если ждущий ливнул, разрешаем остальным снова играть с ботом
+            io.emit('lock_pve', false);
         }
-        delete playerModes[socket.id];
     });
 });
 
