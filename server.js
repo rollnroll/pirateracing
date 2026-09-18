@@ -8,133 +8,129 @@ const io = new Server(server);
 
 app.use(express.static('public'));
 
-let waitingPlayer = null;
+// Разделяем очереди по величинам ставок (в TON / nanoTON)
+const matchmakingQueues = {}; 
 const rooms = {};
-const playerModes = {}; // 'menu', 'pve', 'pvp_waiting', 'pvp_playing'
-
-function broadcastGlobalState() {
-    const totalPlayers = io.engine.clientsCount;
-    const disablePve = totalPlayers > 1 || waitingPlayer !== null;
-
-    io.emit('global_state', {
-        totalPlayers: totalPlayers,
-        disablePve: disablePve,
-        waitingCount: waitingPlayer ? 1 : 0
-    });
-}
 
 io.on('connection', (socket) => {
     console.log(`Игрок подключился: ${socket.id}`);
-    playerModes[socket.id] = 'menu';
-    broadcastGlobalState();
 
-    socket.on('start_pve', () => {
-        if (io.engine.clientsCount > 1 && waitingPlayer !== null) return;
+    // Инициализация профиля подключенного клиента
+    socket.userData = {
+        walletAddress: null,
+        room: null
+    };
 
-        if (waitingPlayer === socket) {
-            waitingPlayer = null;
-        }
-        playerModes[socket.id] = 'pve';
-        socket.emit('pve_started', { message: 'Режим тренировки с ботом активирован! Соперник может найтись в любой момент.' });
-        
-        broadcastGlobalState();
+    // Привязка TON-кошелька при авторизации Web3
+    socket.on('register_wallet', (data) => {
+        socket.userData.walletAddress = data.walletAddress;
     });
 
-    socket.on('start_pvp', () => {
-        if (waitingPlayer === socket) return;
+    // Поиск соперника с учетом выбранной ставки
+    socket.on('start_pvp', (data) => {
+        const betAmount = data.betAmount || 0; // Размер ставки (например, 1 TON)
 
-        // Если есть игрок в очереди и он не равен текущему
-        if (waitingPlayer && waitingPlayer !== socket && waitingPlayer.connected) {
-            const player1 = waitingPlayer;
-            const player2 = socket;
-            
-            startPvPGame(player1, player2);
-            waitingPlayer = null;
+        if (socket.userData.room) return; // Уже в игре
+
+        if (!matchmakingQueues[betAmount]) {
+            matchmakingQueues[betAmount] = [];
+        }
+
+        const queue = matchmakingQueues[betAmount];
+
+        // Проверяем, нет ли игрока уже в очереди
+        if (queue.includes(socket)) return;
+
+        if (queue.length === 0) {
+            queue.push(socket);
+            socket.emit('game_status', `Поиск соперника на ставку ${betAmount} TON...`);
         } else {
-            // Ищем любого другого игрока на сервере (например, того кто сидит в PvE или в меню)
-            const allSockets = Array.from(io.sockets.sockets.values());
-            const opponent = allSockets.find(s => s.id !== socket.id);
+            const opponent = queue.shift();
 
-            if (opponent) {
-                // Если кто-то нашлся, устраиваем им дуэль прямо из PvE/меню
-                startPvPGame(opponent, socket);
-                if (waitingPlayer === opponent) {
-                    waitingPlayer = null;
-                }
-            } else {
-                // Если вообще никого больше нет
-                waitingPlayer = socket;
-                playerModes[socket.id] = 'pvp_waiting';
-                socket.emit('game_status', 'Поиск живого соперника...');
+            if (!opponent.connected) {
+                queue.push(socket);
+                return;
             }
+
+            const roomName = `room_${opponent.id}_${socket.id}`;
+            
+            opponent.join(roomName);
+            socket.join(roomName);
+
+            opponent.userData.room = roomName;
+            socket.userData.room = roomName;
+
+            rooms[roomName] = {
+                players: [
+                    { id: opponent.id, wallet: opponent.userData.walletAddress, progress: 0 },
+                    { id: socket.id, wallet: socket.userData.walletAddress, progress: 0 }
+                ],
+                betAmount: betAmount,
+                status: 'waiting_bets' // Ожидаем подтверждения транзакций из блокчейна
+            };
+
+            // Отправляем клиентам данные для оплаты ставки через TON Connect
+            io.to(roomName).emit('match_found', {
+                room: roomName,
+                betAmount: betAmount,
+                message: 'Соперник найден! Подтвердите транзакцию ставки в кошельке.'
+            });
         }
-        broadcastGlobalState();
     });
 
-    function startPvPGame(player1, player2) {
-        const roomName = `room_${player1.id}_${player2.id}`;
+    // Действие в гонке (нажатие газ/переключение передач)
+    socket.on('player_action', (data) => {
+        const room = rooms[socket.userData.room];
+        if (!room || room.status !== 'racing') return;
 
-        player1.join(roomName);
-        player2.join(roomName);
+        // Сервер сам рассчитывает ускорение вместо того, чтобы верить клиенту
+        const player = room.players.find(p => p.id === socket.id);
+        if (player) {
+            player.progress += Math.floor(Math.random() * 10) + 5; // Пример механики продвижения
 
-        playerModes[player1.id] = 'pvp_playing';
-        playerModes[player2.id] = 'pvp_playing';
+            // Транслируем обновленные позиции обоим участникам
+            io.to(socket.userData.room).emit('race_update', {
+                players: room.players.map(p => ({ id: p.id, progress: p.progress }))
+            });
 
-        rooms[roomName] = {
-            players: [player1.id, player2.id],
-            currentTurn: player1.id
-        };
-
-        io.to(roomName).emit('switch_to_pvp', {
-            room: roomName,
-            message: 'Соперник найден! Бой начинается.',
-            currentTurn: player1.id
-        });
-    }
-
-    socket.on('roll_dice', (data) => {
-        const room = rooms[data.room];
-        if (!room) return;
-
-        if (room.currentTurn !== socket.id) return;
-
-        const nextPlayerId = room.players.find(id => id !== socket.id);
-        room.currentTurn = nextPlayerId;
-
-        io.to(data.room).emit('turn_result', {
-            rollerId: socket.id,
-            result: data.result,
-            nextTurn: nextPlayerId
-        });
-    });
-
-    socket.on('disconnect', () => {
-        console.log(`Игрок отключился: ${socket.id}`);
-        
-        if (waitingPlayer === socket) {
-            waitingPlayer = null;
-        }
-
-        for (const roomName in rooms) {
-            const room = rooms[roomName];
-            if (room.players.includes(socket.id)) {
-                const opponentId = room.players.find(id => id !== socket.id);
-                
-                io.to(opponentId).emit('opponent_disconnected', {
-                    message: 'Соперник отключился от игры.'
+            // Проверка финиша
+            if (player.progress >= 100) {
+                room.status = 'finished';
+                io.to(socket.userData.room).emit('race_finished', {
+                    winnerId: socket.id,
+                    winnerWallet: player.wallet
                 });
-
-                delete rooms[roomName];
-                break;
+                
+                // TODO: Вызов метода смарт-контракта или выдача подписи для TON Escrow
             }
         }
+    });
 
-        delete playerModes[socket.id];
-        broadcastGlobalState();
+    // Обработка дисконнекта
+    socket.on('disconnect', () => {
+        console.log(`Отключился: ${socket.id}`);
+
+        // Очищаем из очередей ожидания
+        for (const bet in matchmakingQueues) {
+            matchmakingQueues[bet] = matchmakingQueues[bet].filter(s => s !== socket);
+        }
+
+        // Техническое поражение при выходе из активной комнаты
+        const roomName = socket.userData.room;
+        if (roomName && rooms[roomName]) {
+            const room = rooms[roomName];
+            const opponent = room.players.find(p => p.id !== socket.id);
+
+            if (opponent && room.status === 'racing') {
+                io.to(opponent.id).emit('opponent_disconnected', {
+                    message: 'Соперник покинул заезд. Вам зачислена победа!',
+                    winnerWallet: opponent.wallet
+                });
+            }
+            delete rooms[roomName];
+        }
     });
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-    console.log(`Сервер запущен на порту ${PORT}`);
-});
+server.listen(PORT, () => console.log(`Сервер запущен на порту ${PORT}`));
