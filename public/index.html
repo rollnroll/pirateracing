@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Пиратская Дуэль - Меню и PvP/PvE</title>
+    <title>Пиратская Дуэль</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -74,7 +74,7 @@
         <h2>🏴‍☠️ Пиратская Дуэль</h2>
         <div id="connection-status" style="font-size: 13px; margin-bottom: 15px;">Подключение к серверу...</div>
 
-        <!-- ЭКРАН 1: ГЛАВНОЕ МЕНЮ -->
+        <!-- ГЛАВНОЕ МЕНЮ -->
         <div id="menu-screen" class="screen active">
             <h3>Главное меню</h3>
             <button onclick="findPvP()">⚔️ Сразиться с игроком (PvP)</button>
@@ -82,7 +82,7 @@
             <div id="menu-status" style="margin-top: 15px; font-size: 14px; color: #f1c40f;"></div>
         </div>
 
-        <!-- ЭКРАН 2: ИГРОВОЙ ПРОЦЕСС -->
+        <!-- ИГРОВОЙ ЭКРАН -->
         <div id="game-screen" class="screen">
             <div id="mode-badge" style="background: #e67e22; padding: 5px; border-radius: 4px; font-size: 12px; font-weight: bold; margin-bottom: 10px;"></div>
             
@@ -135,19 +135,16 @@
             connectionStatusEl.style.color = "#e74c3c";
         });
 
-        // Нажатие на кнопку PvP: начинаем поиск
         function findPvP() {
             menuStatusEl.textContent = "Ищем живого соперника...";
-            pveBtn.disabled = true; // Блокируем кнопку бота, раз мы ищем реального игрока
+            pveBtn.disabled = true; // Жестко блокируем кнопку PvE
             socket.emit('start_pvp');
         }
 
-        // Сервер сообщил, что мы в режиме поиска
         socket.on('game_status', (msg) => {
             menuStatusEl.textContent = msg;
         });
 
-        // Нажатие на кнопку PvE (с ботом)
         function startPvE() {
             isPvE = true;
             socket.emit('start_pve');
@@ -162,7 +159,7 @@
             addLog(data.message);
         });
 
-        // Сервер нашел второго игрока и переключает нас в PvP (даже если мы были в PvE)
+        // Мгновенный перевод в PvP (даже если игрок был в PvE или ждал в меню)
         socket.on('switch_to_pvp', (data) => {
             currentRoom = data.room;
             isPvE = false;
@@ -170,6 +167,7 @@
             menuScreen.classList.remove('active');
             gameScreen.classList.add('active');
             modeBadgeEl.textContent = "РЕЖИМ: PvP ДУЭЛЬ";
+            modeBadgeEl.style.background = "#c0392b";
             
             addLog(data.message);
             
@@ -178,13 +176,11 @@
             rollBtn.disabled = !isMyTurn;
         });
 
-        // Функция броска кубика
         function rollDice() {
             const result = Math.floor(Math.random() * 6) + 1;
             rollBtn.disabled = true;
 
             if (isPvE) {
-                // Ход в режиме с ботом (считаем локально)
                 addLog(`Вы выбросили: ${result}`);
                 gameStatusEl.textContent = `Вы выбросили: ${result}. Ход бота...`;
                 
@@ -195,12 +191,10 @@
                     rollBtn.disabled = false;
                 }, 1000);
             } else {
-                // Ход в режиме PvP через сервер
                 socket.emit('roll_dice', { room: currentRoom, result: result });
             }
         }
 
-        // Ответ сервера в PvP для хода соперника
         socket.on('turn_result', (data) => {
             const isMyRoll = (data.rollerId === socket.id);
 
@@ -217,7 +211,7 @@
         });
 
         function returnToMenu() {
-            window.location.reload(); // Простой способ сбросить сессию при возврате в меню
+            window.location.reload();
         }
     </script>
 
