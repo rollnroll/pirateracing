@@ -10,28 +10,31 @@ app.use(express.static('public'));
 
 let waitingPlayer = null;
 const rooms = {};
+const playerModes = {}; // Следим, кто сейчас в каком режиме ('pve', 'pvp_waiting', 'pvp_playing')
 
 io.on('connection', (socket) => {
     console.log(`Игрок подключился: ${socket.id}`);
+    playerModes[socket.id] = 'menu';
 
-    // Игрок выбирает режим "Тренировка с ботом"
+    // Выбор режима "Тренировка с ботом"
     socket.on('start_pve', () => {
-        // Если этот игрок уже стоял в очереди PvP, убираем его оттуда
+        // Если игрок стоял в очереди PvP, убираем его оттуда
         if (waitingPlayer === socket) {
             waitingPlayer = null;
         }
+        playerModes[socket.id] = 'pve';
         socket.emit('pve_started', { message: 'Режим тренировки с ботом активирован!' });
-        console.log(`Игрок ${socket.id} ушел в PvE с ботом`);
     });
 
-    // Игрок выбирает режим "Сразиться с игроком" (PvP)
+    // Выбор режима "Сразиться с игроком"
     socket.on('start_pvp', () => {
+        playerModes[socket.id] = 'pvp_waiting';
+
         if (!waitingPlayer) {
-            // Если никого нет в очереди, этот игрок становится ждущим
             waitingPlayer = socket;
             socket.emit('game_status', 'Поиск живого соперника...');
         } else if (waitingPlayer !== socket) {
-            // Соперник найден! Создаем комнату
+            // Соперник найден! (даже если кто-то из них был в PvE или ждал)
             const player1 = waitingPlayer;
             const player2 = socket;
             const roomName = `room_${player1.id}_${player2.id}`;
@@ -39,13 +42,15 @@ io.on('connection', (socket) => {
             player1.join(roomName);
             player2.join(roomName);
 
+            playerModes[player1.id] = 'pvp_playing';
+            playerModes[player2.id] = 'pvp_playing';
+
             rooms[roomName] = {
                 players: [player1.id, player2.id],
-                currentTurn: player1.id,
-                isPvP: true
+                currentTurn: player1.id
             };
 
-            // Если кто-то из них играл с ботом, принудительно переключаем в PvP режим
+            // Переключаем обоих в PvP режим независимо от того, где они были
             io.to(roomName).emit('switch_to_pvp', {
                 room: roomName,
                 message: 'Соперник найден! Бой начинается.',
@@ -56,7 +61,7 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Обработка хода в PvP
+    // Бросок кубика в PvP
     socket.on('roll_dice', (data) => {
         const room = rooms[data.room];
         if (!room) return;
@@ -78,7 +83,7 @@ io.on('connection', (socket) => {
         if (waitingPlayer === socket) {
             waitingPlayer = null;
         }
-        // Здесь также можно добавить уведомление оппоненту, если игрок ливнул во время PvP
+        delete playerModes[socket.id];
     });
 });
 
