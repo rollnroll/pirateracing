@@ -27,7 +27,6 @@ io.on('connection', (socket) => {
 
     // Выбор режима "Сразиться с игроком"
     socket.on('start_pvp', () => {
-        // Если игрок уже в очереди или уже ищет, не даем ему стать соперником самому себе
         if (waitingPlayer === socket) return;
 
         playerModes[socket.id] = 'pvp_waiting';
@@ -36,7 +35,6 @@ io.on('connection', (socket) => {
             waitingPlayer = socket;
             socket.emit('game_status', 'Поиск живого соперника...');
         } else {
-            // Проверяем, что waitingPlayer всё еще подключен
             const player1 = waitingPlayer;
             const player2 = socket;
             
@@ -61,7 +59,6 @@ io.on('connection', (socket) => {
                 });
             }
 
-            // Очищаем очередь в любом случае
             waitingPlayer = null;
         }
     });
@@ -91,19 +88,15 @@ io.on('connection', (socket) => {
             waitingPlayer = null;
         }
 
-        // Ищем, не был ли игрок в активной комнате PvP
         for (const roomName in rooms) {
             const room = rooms[roomName];
             if (room.players.includes(socket.id)) {
-                // Находим второго игрока в комнате
                 const opponentId = room.players.find(id => id !== socket.id);
                 
-                // Уведомляем оппонента об отключении соперника
                 io.to(opponentId).emit('opponent_disconnected', {
                     message: 'Соперник отключился от игры.'
                 });
 
-                // Удаляем комнату
                 delete rooms[roomName];
                 break;
             }
