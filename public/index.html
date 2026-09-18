@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Пиратская Дуэль на Кубиках - PvP</title>
+    <title>Пиратская Дуэль - Комнаты</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -33,6 +33,10 @@
         button:hover {
             background-color: #d35400;
         }
+        button:disabled {
+            background-color: #555;
+            cursor: not-allowed;
+        }
         #status {
             margin-top: 15px;
             font-style: italic;
@@ -54,30 +58,31 @@
 <body>
 
     <div class="container">
-        <h2>🏴‍☠️ Пиратская Дуэль</h2>
+        <h2>🏴‍☠️ Пиратская Дуэль (Комнаты)</h2>
         <div id="connection-status">Подключение к серверу...</div>
         
         <div style="margin-top: 20px;">
             <button id="roll-btn" onclick="rollDice()" disabled>Бросить кубик</button>
         </div>
 
-        <div id="status">Ждем хода...</div>
+        <div id="status">Ожидание подключения...</div>
 
         <div class="log" id="log">
             <div>Лог событий:</div>
         </div>
     </div>
 
-    <!-- Подключаем библиотеку Socket.io, которую раздает наш сервер -->
+    <!-- Подключаем библиотеку Socket.io -->
     <script src="/socket.io/socket.io.js"></script>
     <script>
-        // Подключаемся к серверу на Render (автоматически определяет текущий домен)
         const socket = io();
 
         const statusEl = document.getElementById('connection-status');
         const rollBtn = document.getElementById('roll-btn');
         const gameStatusEl = document.getElementById('status');
         const logEl = document.getElementById('log');
+
+        let currentRoom = null; // Переменная для хранения нашей игровой комнаты
 
         function addLog(text) {
             const div = document.createElement('div');
@@ -86,15 +91,14 @@
             logEl.scrollTop = logEl.scrollHeight;
         }
 
-        // Успешное подключение к серверу
+        // 1. Успешное подключение к серверу
         socket.on('connect', () => {
             statusEl.textContent = "🟢 Подключено к серверу";
             statusEl.style.color = "#2ecc71";
-            rollBtn.disabled = false;
             addLog(`Подключились с ID: ${socket.id}`);
         });
 
-        // Отключение от сервера
+        // 2. Отключение от сервера
         socket.on('disconnect', () => {
             statusEl.textContent = "🔴 Нет соединения с сервером";
             statusEl.style.color = "#e74c3c";
@@ -102,47 +106,42 @@
             addLog("Соединение потеряно.");
         });
 
-        // Функция броска кубика
-        function rollDice() {
-            const result = Math.floor(Math.random() * 6) + 1;
-            gameStatusEl.textContent = `Вы выбросили: ${result}`;
-            addLog(`Вы сделали ход: выпало ${result}`);
-
-            // Отправляем результат на сервер, чтобы он переслал его сопернику
-            socket.emit('roll_dice', { result: result });
-        }
-
-        // Получаем ход от соперника через сервер
-        socket.on('opponent_rolled', (data) => {
-            gameStatusEl.textContent = `Соперник выбросил: ${data.result}`;
-            addLog(`Соперник сделал ход: выпало ${data.result}`);
+        // 3. Статус от сервера (например, "Ожидание второго игрока...")
+        socket.on('game_status', (msg) => {
+            gameStatusEl.textContent = msg;
+            addLog(msg);
+            rollBtn.disabled = true; // Пока ждем соперника, бросать нельзя
         });
 
-        let currentRoom = null;
+        // 4. Соперник найден, игра начинается!
+        socket.on('start_game', (data) => {
+            currentRoom = data.room; // Сохраняем комнату
+            gameStatusEl.textContent = data.message;
+            addLog(`Комната получена: ${data.room}`);
+            addLog(data.message);
+            rollBtn.disabled = false; // Разрешаем ходить
+        });
 
-socket.on('start_game', (data) => {
-    currentRoom = data.room;
-    gameStatusEl.textContent = data.message;
-    addLog(data.message);
-    rollBtn.disabled = false; // Активируем кнопку
-});
+        // 5. Функция броска кубика
+        function rollDice() {
+            if (!currentRoom) return;
 
-function rollDice() {
-    const result = Math.floor(Math.random() * 6) + 1;
-    gameStatusEl.textContent = `Вы выбросили: ${result}. Ждем ход соперника.`;
-    addLog(`Вы сделали ход: выпало ${result}`);
-    
-    rollBtn.disabled = true; // Блокируем кнопку до ответа соперника (по желанию)
+            const result = Math.floor(Math.random() * 6) + 1;
+            gameStatusEl.textContent = `Вы выбросили: ${result}. Ждем ход соперника.`;
+            addLog(`Вы сделали ход: выпало ${result}`);
+            
+            rollBtn.disabled = true; // Блокируем кнопку после своего хода
 
-    // Передаем результат и комнату на сервер
-    socket.emit('roll_dice', { room: currentRoom, result: result });
-}
+            // Отправляем результат и комнату на сервер
+            socket.emit('roll_dice', { room: currentRoom, result: result });
+        }
 
-socket.on('opponent_rolled', (data) => {
-    gameStatusEl.textContent = `Соперник выбросил: ${data.result}. Ваш ход!`;
-    addLog(`Соперник сделал ход: выпало ${data.result}`);
-    rollBtn.disabled = false; // Снова даем возможность ходить
-});
+        // 6. Получаем ход от соперника
+        socket.on('opponent_rolled', (data) => {
+            gameStatusEl.textContent = `Соперник выбросил: ${data.result}. Ваш ход!`;
+            addLog(`Соперник сделал ход: выпало ${data.result}`);
+            rollBtn.disabled = false; // Снова разблокируем кнопку
+        });
     </script>
 
 </body>
