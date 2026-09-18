@@ -6,45 +6,64 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-// Раздаем статические файлы из папки public
 app.use(express.static('public'));
 
-let waitingPlayer = null; // Переменная для игрока, который ждет соперника
+let waitingPlayer = null;
+const rooms = {}; // Храним информацию о комнатах и чья сейчас очередь
 
 io.on('connection', (socket) => {
     console.log(`Игрок подключился: ${socket.id}`);
 
-    // Логика поиска соперника (матчмейкинг)
     if (!waitingPlayer) {
         waitingPlayer = socket;
         socket.emit('game_status', 'Ожидание второго игрока...');
     } else {
-        // Создаем уникальное имя комнаты для этой пары
         const roomName = `room_${waitingPlayer.id}_${socket.id}`;
         
         waitingPlayer.join(roomName);
         socket.join(roomName);
 
-        // Сообщаем обоим игрокам, что игра началась
-        waitingPlayer.emit('start_game', { room: roomName, message: 'Соперник найден! Ваш ход.' });
-        socket.emit('start_game', { room: roomName, message: 'Соперник найден! Ждите ход соперника.' });
+        // Создаем состояние комнаты: первый пошел тот, кто ждал
+        rooms[roomName] = {
+            players: [waitingPlayer.id, socket.id],
+            currentTurn: waitingPlayer.id 
+        };
 
-        console.h = `Создана комната: ${roomName}`;
-        waitingPlayer = null; // Сбрасываем очередь
+        // Первому игроку разрешаем ход, второму — запрещаем
+        waitingPlayer.emit('start_game', { room: roomName, message: 'Соперник найден! Ваш ход.', isMyTurn: true });
+        socket.emit('start_game', { room: roomName, message: 'Соперник найден! Ждите ход соперника.', isMyTurn: false });
+
+        waitingPlayer = null;
     }
 
-    // Обработка броска кубика
+    // Обработка броска кубика с проверкой очереди на сервере
     socket.on('roll_dice', (data) => {
-        // Отправляем результат броска только сопернику в этой же комнате
-        socket.to(data.room).emit('opponent_rolled', { result: data.result });
+        const room = rooms[data.room];
+        if (!room) return;
+
+        // Жесткая проверка: если сейчас не ход этого игрока — игнорируем запрос!
+        if (room.currentTurn !== socket.id) {
+            return;
+        }
+
+        // Меняем очередь на другого игрока в комнате
+        const nextPlayerId = room.players.find(id => id !== socket.id);
+        room.currentTurn = nextPlayerId;
+
+        // Рассылаем результаты и информацию о том, чей теперь ход, обоим игрокам
+        io.to(data.room).emit('turn_result', {
+            rollerId: socket.id,
+            result: data.result,
+            nextTurn: nextPlayerId
+        });
     });
 
-    // Обработка отключения игрока
     socket.on('disconnect', () => {
         console.log(`Игрок отключился: ${socket.id}`);
         if (waitingPlayer === socket) {
             waitingPlayer = null;
         }
+        // Очистку комнат при отключении можно будет добавить позже
     });
 });
 
