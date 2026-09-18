@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Пиратская Дуэль - Комнаты</title>
+    <title>Пиратская Дуэль - Строгая очередь</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -58,7 +58,7 @@
 <body>
 
     <div class="container">
-        <h2>🏴‍☠️ Пиратская Дуэль (Комнаты)</h2>
+        <h2>🏴‍☠️ Пиратская Дуэль</h2>
         <div id="connection-status">Подключение к серверу...</div>
         
         <div style="margin-top: 20px;">
@@ -72,7 +72,6 @@
         </div>
     </div>
 
-    <!-- Подключаем библиотеку Socket.io -->
     <script src="/socket.io/socket.io.js"></script>
     <script>
         const socket = io();
@@ -82,7 +81,7 @@
         const gameStatusEl = document.getElementById('status');
         const logEl = document.getElementById('log');
 
-        let currentRoom = null; // Переменная для хранения нашей игровой комнаты
+        let currentRoom = null;
 
         function addLog(text) {
             const div = document.createElement('div');
@@ -91,14 +90,12 @@
             logEl.scrollTop = logEl.scrollHeight;
         }
 
-        // 1. Успешное подключение к серверу
         socket.on('connect', () => {
             statusEl.textContent = "🟢 Подключено к серверу";
             statusEl.style.color = "#2ecc71";
             addLog(`Подключились с ID: ${socket.id}`);
         });
 
-        // 2. Отключение от сервера
         socket.on('disconnect', () => {
             statusEl.textContent = "🔴 Нет соединения с сервером";
             statusEl.style.color = "#e74c3c";
@@ -106,41 +103,47 @@
             addLog("Соединение потеряно.");
         });
 
-        // 3. Статус от сервера (например, "Ожидание второго игрока...")
         socket.on('game_status', (msg) => {
             gameStatusEl.textContent = msg;
             addLog(msg);
-            rollBtn.disabled = true; // Пока ждем соперника, бросать нельзя
+            rollBtn.disabled = true;
         });
 
-        // 4. Соперник найден, игра начинается!
+        // Старт игры с явным указанием, чей ход первый
         socket.on('start_game', (data) => {
-            currentRoom = data.room; // Сохраняем комнату
+            currentRoom = data.room;
             gameStatusEl.textContent = data.message;
-            addLog(`Комната получена: ${data.room}`);
             addLog(data.message);
-            rollBtn.disabled = false; // Разрешаем ходить
+            
+            // Кнопка активна только если сервер разрешил ходить первому
+            rollBtn.disabled = !data.isMyTurn;
         });
 
-        // 5. Функция броска кубика
         function rollDice() {
             if (!currentRoom) return;
 
             const result = Math.floor(Math.random() * 6) + 1;
-            gameStatusEl.textContent = `Вы выбросили: ${result}. Ждем ход соперника.`;
-            addLog(`Вы сделали ход: выпало ${result}`);
-            
-            rollBtn.disabled = true; // Блокируем кнопку после своего хода
+            rollBtn.disabled = true; // Сразу блокируем свою кнопку после клика
 
-            // Отправляем результат и комнату на сервер
+            // Отправляем ход на сервер
             socket.emit('roll_dice', { room: currentRoom, result: result });
         }
 
-        // 6. Получаем ход от соперника
-        socket.on('opponent_rolled', (data) => {
-            gameStatusEl.textContent = `Соперник выбросил: ${data.result}. Ваш ход!`;
-            addLog(`Соперник сделал ход: выпало ${data.result}`);
-            rollBtn.disabled = false; // Снова разблокируем кнопку
+        // Обработка результата хода от сервера для обоих игроков
+        socket.on('turn_result', (data) => {
+            const isMyRoll = (data.rollerId === socket.id);
+
+            if (isMyRoll) {
+                gameStatusEl.textContent = `Вы выбросили: ${data.result}. Ждем ход соперника.`;
+                addLog(`Вы сделали ход: выпало ${data.result}`);
+            } else {
+                gameStatusEl.textContent = `Соперник выбросил: ${data.result}. Ваш ход!`;
+                addLog(`Соперник сделал ход: выпало ${data.result}`);
+            }
+
+            // Включаем кнопку только если следующий ход — наш
+            const isMyTurn = (data.nextTurn === socket.id);
+            rollBtn.disabled = !isMyTurn;
         });
     </script>
 
