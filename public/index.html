@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Пиратская Дуэль - Строгая очередь</title>
+    <title>Пиратская Дуэль - Меню и PvP/PvE</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -20,6 +20,12 @@
             border-radius: 10px;
             box-shadow: 0 4px 10px rgba(0,0,0,0.5);
         }
+        .screen {
+            display: none;
+        }
+        .screen.active {
+            display: block;
+        }
         button {
             background-color: #e67e22;
             color: white;
@@ -29,6 +35,7 @@
             border-radius: 5px;
             cursor: pointer;
             margin-top: 15px;
+            width: 100%;
         }
         button:hover {
             background-color: #d35400;
@@ -36,6 +43,12 @@
         button:disabled {
             background-color: #555;
             cursor: not-allowed;
+        }
+        button.secondary {
+            background-color: #2980b9;
+        }
+        button.secondary:hover {
+            background-color: #1f618d;
         }
         #status {
             margin-top: 15px;
@@ -59,16 +72,31 @@
 
     <div class="container">
         <h2>🏴‍☠️ Пиратская Дуэль</h2>
-        <div id="connection-status">Подключение к серверу...</div>
-        
-        <div style="margin-top: 20px;">
-            <button id="roll-btn" onclick="rollDice()" disabled>Бросить кубик</button>
+        <div id="connection-status" style="font-size: 13px; margin-bottom: 15px;">Подключение к серверу...</div>
+
+        <!-- ЭКРАН 1: ГЛАВНОЕ МЕНЮ -->
+        <div id="menu-screen" class="screen active">
+            <h3>Главное меню</h3>
+            <button onclick="findPvP()">⚔️ Сразиться с игроком (PvP)</button>
+            <button class="secondary" id="pve-btn" onclick="startPvE()">🤖 Тренировка с ботом (PvE)</button>
+            <div id="menu-status" style="margin-top: 15px; font-size: 14px; color: #f1c40f;"></div>
         </div>
 
-        <div id="status">Ожидание подключения...</div>
+        <!-- ЭКРАН 2: ИГРОВОЙ ПРОЦЕСС -->
+        <div id="game-screen" class="screen">
+            <div id="mode-badge" style="background: #e67e22; padding: 5px; border-radius: 4px; font-size: 12px; font-weight: bold; margin-bottom: 10px;"></div>
+            
+            <div style="margin-top: 10px;">
+                <button id="roll-btn" onclick="rollDice()" disabled>Бросить кубик</button>
+            </div>
 
-        <div class="log" id="log">
-            <div>Лог событий:</div>
+            <div id="status">Ожидание...</div>
+
+            <div class="log" id="log">
+                <div>Лог событий:</div>
+            </div>
+            
+            <button class="secondary" onclick="returnToMenu()" style="margin-top: 15px; background: #c0392b;">В меню</button>
         </div>
     </div>
 
@@ -76,12 +104,19 @@
     <script>
         const socket = io();
 
-        const statusEl = document.getElementById('connection-status');
+        const connectionStatusEl = document.getElementById('connection-status');
+        const menuScreen = document.getElementById('menu-screen');
+        const gameScreen = document.getElementById('game-screen');
+        const menuStatusEl = document.getElementById('menu-status');
+        const pveBtn = document.getElementById('pve-btn');
+        
         const rollBtn = document.getElementById('roll-btn');
         const gameStatusEl = document.getElementById('status');
+        const modeBadgeEl = document.getElementById('mode-badge');
         const logEl = document.getElementById('log');
 
         let currentRoom = null;
+        let isPvE = false;
 
         function addLog(text) {
             const div = document.createElement('div');
@@ -91,45 +126,81 @@
         }
 
         socket.on('connect', () => {
-            statusEl.textContent = "🟢 Подключено к серверу";
-            statusEl.style.color = "#2ecc71";
-            addLog(`Подключились с ID: ${socket.id}`);
+            connectionStatusEl.textContent = "🟢 Подключено к серверу";
+            connectionStatusEl.style.color = "#2ecc71";
         });
 
         socket.on('disconnect', () => {
-            statusEl.textContent = "🔴 Нет соединения с сервером";
-            statusEl.style.color = "#e74c3c";
-            rollBtn.disabled = true;
-            addLog("Соединение потеряно.");
+            connectionStatusEl.textContent = "🔴 Нет соединения";
+            connectionStatusEl.style.color = "#e74c3c";
         });
 
-        socket.on('game_status', (msg) => {
-            gameStatusEl.textContent = msg;
-            addLog(msg);
-            rollBtn.disabled = true;
-        });
-
-        // Старт игры с явным указанием, чей ход первый
-        socket.on('start_game', (data) => {
-            currentRoom = data.room;
-            gameStatusEl.textContent = data.message;
-            addLog(data.message);
-            
-            // Кнопка активна только если сервер разрешил ходить первому
-            rollBtn.disabled = !data.isMyTurn;
-        });
-
-        function rollDice() {
-            if (!currentRoom) return;
-
-            const result = Math.floor(Math.random() * 6) + 1;
-            rollBtn.disabled = true; // Сразу блокируем свою кнопку после клика
-
-            // Отправляем ход на сервер
-            socket.emit('roll_dice', { room: currentRoom, result: result });
+        // Нажатие на кнопку PvP: начинаем поиск
+        function findPvP() {
+            menuStatusEl.textContent = "Ищем живого соперника...";
+            pveBtn.disabled = true; // Блокируем кнопку бота, раз мы ищем реального игрока
+            socket.emit('start_pvp');
         }
 
-        // Обработка результата хода от сервера для обоих игроков
+        // Сервер сообщил, что мы в режиме поиска
+        socket.on('game_status', (msg) => {
+            menuStatusEl.textContent = msg;
+        });
+
+        // Нажатие на кнопку PvE (с ботом)
+        function startPvE() {
+            isPvE = true;
+            socket.emit('start_pve');
+        }
+
+        socket.on('pve_started', (data) => {
+            menuScreen.classList.remove('active');
+            gameScreen.classList.add('active');
+            modeBadgeEl.textContent = "РЕЖИМ: ТРЕНИРОВКА С БОТОМ";
+            gameStatusEl.textContent = "Ваш ход против бота!";
+            rollBtn.disabled = false;
+            addLog(data.message);
+        });
+
+        // Сервер нашел второго игрока и переключает нас в PvP (даже если мы были в PvE)
+        socket.on('switch_to_pvp', (data) => {
+            currentRoom = data.room;
+            isPvE = false;
+            
+            menuScreen.classList.remove('active');
+            gameScreen.classList.add('active');
+            modeBadgeEl.textContent = "РЕЖИМ: PvP ДУЭЛЬ";
+            
+            addLog(data.message);
+            
+            const isMyTurn = (data.currentTurn === socket.id);
+            gameStatusEl.textContent = isMyTurn ? "Соперник найден! Ваш ход." : "Соперник найден! Ждите ход соперника.";
+            rollBtn.disabled = !isMyTurn;
+        });
+
+        // Функция броска кубика
+        function rollDice() {
+            const result = Math.floor(Math.random() * 6) + 1;
+            rollBtn.disabled = true;
+
+            if (isPvE) {
+                // Ход в режиме с ботом (считаем локально)
+                addLog(`Вы выбросили: ${result}`);
+                gameStatusEl.textContent = `Вы выбросили: ${result}. Ход бота...`;
+                
+                setTimeout(() => {
+                    const botResult = Math.floor(Math.random() * 6) + 1;
+                    addLog(`Бот выбросил: ${botResult}`);
+                    gameStatusEl.textContent = `Бот выбросил: ${botResult}. Ваш ход!`;
+                    rollBtn.disabled = false;
+                }, 1000);
+            } else {
+                // Ход в режиме PvP через сервер
+                socket.emit('roll_dice', { room: currentRoom, result: result });
+            }
+        }
+
+        // Ответ сервера в PvP для хода соперника
         socket.on('turn_result', (data) => {
             const isMyRoll = (data.rollerId === socket.id);
 
@@ -141,10 +212,13 @@
                 addLog(`Соперник сделал ход: выпало ${data.result}`);
             }
 
-            // Включаем кнопку только если следующий ход — наш
             const isMyTurn = (data.nextTurn === socket.id);
             rollBtn.disabled = !isMyTurn;
         });
+
+        function returnToMenu() {
+            window.location.reload(); // Простой способ сбросить сессию при возврате в меню
+        }
     </script>
 
 </body>
