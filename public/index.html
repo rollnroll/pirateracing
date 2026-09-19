@@ -3,571 +3,561 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Пиратская Дуэль (TON Edition)</title>
-    
-    <!-- Telegram WebApp SDK -->
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    
-    <!-- Socket.io Client -->
-    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <title>Пиратская Дуэль (TON PvP)</title>
 
-    <!-- TON Connect UI SDK -->
+    <!-- Подключаем необходимые библиотеки -->
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <script src="https://unpkg.com/@tonconnect/ui@latest/dist/tonconnect-ui.min.js"></script>
-
-    <!-- Tailwind CSS CDN -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        gold: '#fbbf24',
-                        'gold-hover': '#f59e0b',
-                        pirate: {
-                            bg: '#0f141c',
-                            card: '#182232',
-                            inner: '#1e293b',
-                            border: '#2a3b55',
-                            accent: '#d97706'
-                        }
-                    }
-                }
-            }
-        }
-    </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
 
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@700&family=Inter:wght@400;600;700&display=swap');
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            user-select: none;
+        }
 
         body {
-            font-family: 'Inter', sans-serif;
-            background-color: #0f141c;
+            background-color: #0b0f17;
             color: #f0f4f8;
-            user-select: none;
-            -webkit-user-select: none;
-            overflow-x: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 12px;
         }
 
-        .font-pirate {
-            font-family: 'Cinzel', serif;
+        .game-container {
+            width: 100%;
+            max-width: 420px;
+            background: #141d2b;
+            border-radius: 20px;
+            padding: 20px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+            text-align: center;
+            border: 2px solid #233147;
+            position: relative;
         }
 
-        /* Dice Shaking Animation */
-        @keyframes shakeDice {
-            0% { transform: translate(0, 0) rotate(0deg); }
-            20% { transform: translate(-4px, -6px) rotate(-12deg); }
-            40% { transform: translate(5px, 4px) rotate(14deg); }
-            60% { transform: translate(-5px, 2px) rotate(-8deg); }
-            80% { transform: translate(4px, -3px) rotate(10deg); }
-            100% { transform: translate(0, 0) rotate(0deg); }
+        header h1 {
+            font-size: 22px;
+            margin-bottom: 8px;
+            color: #fbbf24;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.5);
         }
 
-        .dice-rolling {
-            animation: shakeDice 0.4s ease-in-out infinite;
+        .wallet-bar {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 15px;
         }
 
-        /* Turn Indicator Pulse Glow */
-        .card-active {
-            border-color: #d97706 !important;
-            box-shadow: 0 0 18px rgba(217, 119, 6, 0.4);
+        .balance-badge {
+            background: #1c2738;
+            border: 1px solid #334155;
+            border-radius: 20px;
+            padding: 4px 12px;
+            font-size: 12px;
+            color: #38bdf8;
+            font-weight: bold;
+            display: none;
         }
 
-        /* Custom Scrollbar */
-        ::-webkit-scrollbar {
-            width: 4px;
+        .menu-screen {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            margin: 10px 0;
         }
-        ::-webkit-scrollbar-track {
-            background: #0f141c;
+
+        .game-screen {
+            display: none;
         }
-        ::-webkit-scrollbar-thumb {
-            background: #2a3b55;
+
+        .mode-card {
+            background-color: #1c2738;
+            border: 2px solid #2a3b55;
+            border-radius: 14px;
+            padding: 14px;
+            text-align: left;
+        }
+
+        .mode-title-text {
+            font-size: 15px;
+            font-weight: bold;
+            color: #f8fafc;
+            margin-bottom: 4px;
+        }
+
+        .mode-desc {
+            font-size: 12px;
+            color: #94a3b8;
+            margin-bottom: 10px;
+        }
+
+        .bet-control {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            margin-top: 8px;
+            font-size: 13px;
+            color: #cbd5e1;
+        }
+
+        .bet-input {
+            width: 90px;
+            background: #0b0f17;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            color: #fbbf24;
+            padding: 6px;
+            text-align: center;
+            font-weight: bold;
+            font-size: 14px;
+        }
+
+        .start-mode-btn {
+            background-color: #d97706;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 8px 14px;
+            font-weight: bold;
+            cursor: pointer;
+            box-shadow: 0 3px 0 #92400e;
+        }
+
+        .start-mode-btn:active {
+            transform: translateY(2px);
+            box-shadow: 0 1px 0 #92400e;
+        }
+
+        .prize-pool-box {
+            background: #1c2738;
+            border: 1px dashed #fbbf24;
+            border-radius: 12px;
+            padding: 10px;
+            margin-bottom: 15px;
+            font-size: 15px;
+            color: #fbbf24;
+            font-weight: bold;
+        }
+
+        .arena {
+            display: flex;
+            justify-content: space-around;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .player-card {
+            flex: 1;
+            background: #1c2738;
+            border: 2px solid #2a3b55;
+            border-radius: 14px;
+            padding: 12px;
+            text-align: center;
+        }
+
+        .player-card.active {
+            border-color: #fbbf24;
+            box-shadow: 0 0 15px rgba(251, 191, 36, 0.25);
+        }
+
+        .player-name {
+            font-size: 13px;
+            font-weight: bold;
+            margin-bottom: 8px;
+            color: #94a3b8;
+        }
+
+        .dice-box {
+            margin: 10px 0;
+            min-height: 50px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .dice {
+            font-size: 38px;
+            display: inline-block;
+        }
+
+        .player-score {
+            font-size: 13px;
+            color: #cbd5e1;
+            font-weight: bold;
+        }
+
+        #message {
+            font-size: 14px;
+            margin-bottom: 15px;
+            min-height: 24px;
+            color: #e2e8f0;
+            font-weight: 500;
+        }
+
+        .pirate-btn {
+            background-color: #d97706;
+            color: white;
+            border: none;
+            border-radius: 12px;
+            padding: 14px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            width: 100%;
+            box-shadow: 0 4px 0 #92400e;
+        }
+
+        .pirate-btn:disabled {
+            background-color: #334155;
+            box-shadow: none;
+            color: #64748b;
+            cursor: not-allowed;
+        }
+
+        /* Блок Provably Fair */
+        .fairness-box {
+            background: #0b0f17;
+            border: 1px solid #233147;
+            border-radius: 10px;
+            padding: 10px;
+            margin-top: 15px;
+            font-size: 11px;
+            text-align: left;
+            color: #94a3b8;
+        }
+
+        .fairness-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 6px;
+            font-weight: bold;
+            color: #fbbf24;
+        }
+
+        .hash-text {
+            word-break: break-all;
+            font-family: monospace;
+            font-size: 10px;
+            color: #cbd5e1;
+            background: #141d2b;
+            padding: 4px;
             border-radius: 4px;
+            margin-top: 2px;
         }
 
-        canvas#confetti-canvas {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: 100vh;
-            pointer-events: none;
-            z-index: 50;
+        .verify-btn {
+            background: #1e293b;
+            border: 1px solid #334155;
+            color: #38bdf8;
+            font-size: 10px;
+            padding: 3px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            float: right;
+            margin-top: 4px;
         }
 
-        /* TonConnect Custom Button Tweaks */
-        #ton-connect-btn div {
-            margin: 0 auto;
+        .back-menu-btn {
+            background: none;
+            border: none;
+            color: #64748b;
+            font-size: 12px;
+            cursor: pointer;
+            margin-top: 10px;
+            text-decoration: underline;
         }
     </style>
 </head>
-<body class="min-h-screen flex flex-col items-center justify-between p-4 max-w-md mx-auto">
-    <!-- Confetti Canvas Overlay -->
-    <canvas id="confetti-canvas"></canvas>
+<body>
 
-    <!-- Header / Wallet Connector Area -->
-    <header class="w-full text-center my-2 relative">
-        <div class="flex justify-between items-center mb-3 px-1">
-            <button id="sound-btn" onclick="toggleSound()" class="bg-pirate-card border border-pirate-border rounded-lg px-3 py-1.5 text-xs text-gray-300 flex items-center gap-1 active:scale-95 transition">
-                <span id="sound-icon">🔊</span> Звук: <span id="sound-status">ВКЛ</span>
-            </button>
-            
-            <div id="socket-status" class="bg-pirate-card border border-pirate-border rounded-lg px-2.5 py-1 text-[11px] text-gray-400 flex items-center gap-1.5">
-                <span id="status-dot" class="w-2 h-2 rounded-full bg-yellow-500 animate-pulse"></span>
-                <span id="status-text">Сеть...</span>
+    <div class="game-container">
+        <header>
+            <h1>🏴‍☠️ Пиратская Дуэль</h1>
+            <div class="wallet-bar">
+                <div id="ton-connect-btn"></div>
+                <div id="balance-badge" class="balance-badge">Баланс: <span id="user-balance">0.000</span> TON</div>
+            </div>
+        </header>
+
+        <!-- Меню выбора режимов -->
+        <div id="menu-screen" class="menu-screen">
+            <div class="mode-card">
+                <div class="mode-title-text">⚔️ Блиц-дуэль (1 бросок)</div>
+                <div class="mode-desc">Кто выбросит больше за 1 раунд — забирает банк</div>
+                <div class="bet-control">
+                    <span>Ставка (TON):</span>
+                    <input type="number" id="bet-1" class="bet-input" value="0.1" step="0.001" min="0.001">
+                    <button class="start-mode-btn" onclick="startSearch(1)">В БОЙ</button>
+                </div>
+            </div>
+
+            <div class="mode-card">
+                <div class="mode-title-text">🎯 Гонка от 10 до 0</div>
+                <div class="mode-desc">Один кубик. Выбиваем очки до 0</div>
+                <div class="bet-control">
+                    <span>Ставка (TON):</span>
+                    <input type="number" id="bet-2" class="bet-input" value="0.5" step="0.001" min="0.001">
+                    <button class="start-mode-btn" onclick="startSearch(2)">В БОЙ</button>
+                </div>
+            </div>
+
+            <div class="mode-card">
+                <div class="mode-title-text">🔥 Забег от 100 до 0</div>
+                <div class="mode-desc">Два кубика! Скоростной PvP спуск от 100</div>
+                <div class="bet-control">
+                    <span>Ставка (TON):</span>
+                    <input type="number" id="bet-3" class="bet-input" value="1.0" step="0.001" min="0.001">
+                    <button class="start-mode-btn" onclick="startSearch(3)">В БОЙ</button>
+                </div>
             </div>
         </div>
 
-        <h1 class="font-pirate text-2xl font-bold tracking-wider text-gold drop-shadow-md">🏴‍☠️ ПИРАТСКАЯ ДУЭЛЬ</h1>
-        <p class="text-xs text-gray-400 mt-0.5 mb-3">Таверна Азарта на TON</p>
+        <!-- Игровой экран -->
+        <div id="game-screen" class="game-screen">
+            <div class="prize-pool-box">🏆 Банк: <span id="prize-pool">0</span> TON</div>
 
-        <!-- TON Connect Official Button Hook -->
-        <div class="flex justify-center my-2">
-            <div id="ton-connect-btn"></div>
+            <div class="arena">
+                <div class="player-card" id="p1-card">
+                    <div class="player-name">Вы</div>
+                    <div class="dice-box" id="dice-box-1"><div class="dice">🎲</div></div>
+                    <div class="player-score">Очки: <span id="score-1">0</span></div>
+                </div>
+
+                <div class="player-card" id="p2-card">
+                    <div class="player-name">Соперник</div>
+                    <div class="dice-box" id="dice-box-2"><div class="dice">🎲</div></div>
+                    <div class="player-score">Очки: <span id="score-2">0</span></div>
+                </div>
+            </div>
+
+            <p id="message">Поиск соперника...</p>
+            <button id="roll-btn" class="pirate-btn" disabled>Бросить кубик</button>
+
+            <!-- Блок Доказательной Честности (Provably Fair) -->
+            <div class="fairness-box">
+                <div class="fairness-header">
+                    <span>🛡️ Provably Fair (SHA-256)</span>
+                    <span id="fair-status" style="color: #4ade80;">✓ Хэш Зафиксирован</span>
+                </div>
+                <div>Хэш сервера ДО броска (Commitment):</div>
+                <div class="hash-text" id="hash-commitment">ожидание данных сервера...</div>
+                
+                <div id="proof-details" style="display: none; margin-top: 6px;">
+                    <div>Открытый Server Seed:</div>
+                    <div class="hash-text" id="server-seed-display">-</div>
+                    <button class="verify-btn" onclick="verifyLastRoll()">Проверить честность</button>
+                </div>
+            </div>
+
+            <button class="back-menu-btn" onclick="returnToMenu()">← Покинуть дуэль</button>
         </div>
-        <div id="wallet-warning" class="text-[11px] text-amber-400 font-semibold mt-1">
-            ⚠️ Подключите кошелек для игры в дуэль
-        </div>
-    </header>
-
-    <!-- MAIN CONTENT CONTAINER -->
-    <main class="w-full flex-1 flex flex-col justify-center my-2">
-        
-        <!-- SCREEN 1: MODE SELECTION MENU -->
-        <section id="screen-menu" class="space-y-3">
-            <!-- Mode 1: Blitz -->
-            <div class="bg-pirate-card border border-pirate-border rounded-xl p-3.5 text-left transition hover:border-amber-600/50">
-                <div class="flex justify-between items-center">
-                    <span class="font-pirate text-base font-bold text-amber-400">⚔️ Блиц-дуэль</span>
-                    <span class="text-[10px] bg-amber-950/80 text-amber-300 border border-amber-800/60 px-2 py-0.5 rounded">1 Кубик</span>
-                </div>
-                <p class="text-xs text-gray-400 mt-1">Один бросок кости. Победитель с наибольшим значением забирает банк.</p>
-                <div class="flex justify-between items-center mt-3 pt-2 border-t border-pirate-border/60">
-                    <div class="flex items-center gap-2">
-                        <span class="text-xs text-gray-400">Ставка:</span>
-                        <input type="number" id="bet-mode-1" value="0.5" step="0.1" min="0.1" class="w-20 bg-pirate-bg border border-pirate-border rounded text-center text-sm font-bold text-gold focus:outline-none focus:border-amber-500 py-0.5">
-                        <span class="text-xs text-gold font-bold">TON</span>
-                    </div>
-                    <button onclick="requestMatchmaking(1)" class="bg-amber-600 hover:bg-amber-500 active:scale-95 text-white font-bold text-xs px-4 py-2 rounded-lg transition shadow-lg">
-                        В БОЙ
-                    </button>
-                </div>
-            </div>
-
-            <!-- Mode 2: Race 10 to 0 -->
-            <div class="bg-pirate-card border border-pirate-border rounded-xl p-3.5 text-left transition hover:border-amber-600/50">
-                <div class="flex justify-between items-center">
-                    <span class="font-pirate text-base font-bold text-amber-400">🎯 Гонка от 10 до 0</span>
-                    <span class="text-[10px] bg-amber-950/80 text-amber-300 border border-amber-800/60 px-2 py-0.5 rounded">1 Кубик</span>
-                </div>
-                <p class="text-xs text-gray-400 mt-1">Начните с 10 очков. Броски вычитаются. Побеждает тот, кто первый дойдет до 0.</p>
-                <div class="flex justify-between items-center mt-3 pt-2 border-t border-pirate-border/60">
-                    <div class="flex items-center gap-2">
-                        <span class="text-xs text-gray-400">Ставка:</span>
-                        <input type="number" id="bet-mode-2" value="1.0" step="0.1" min="0.1" class="w-20 bg-pirate-bg border border-pirate-border rounded text-center text-sm font-bold text-gold focus:outline-none focus:border-amber-500 py-0.5">
-                        <span class="text-xs text-gold font-bold">TON</span>
-                    </div>
-                    <button onclick="requestMatchmaking(2)" class="bg-amber-600 hover:bg-amber-500 active:scale-95 text-white font-bold text-xs px-4 py-2 rounded-lg transition shadow-lg">
-                        В БОЙ
-                    </button>
-                </div>
-            </div>
-
-            <!-- Mode 3: Sprint 100 to 0 -->
-            <div class="bg-pirate-card border border-pirate-border rounded-xl p-3.5 text-left transition hover:border-amber-600/50">
-                <div class="flex justify-between items-center">
-                    <span class="font-pirate text-base font-bold text-amber-400">🔥 Марафон от 100 до 0</span>
-                    <span class="text-[10px] bg-amber-950/80 text-amber-300 border border-amber-800/60 px-2 py-0.5 rounded">2 Кубика</span>
-                </div>
-                <p class="text-xs text-gray-400 mt-1">Динамичный спринт с двумя костями от 100 до 0. Двойная скорость!</p>
-                <div class="flex justify-between items-center mt-3 pt-2 border-t border-pirate-border/60">
-                    <div class="flex items-center gap-2">
-                        <span class="text-xs text-gray-400">Ставка:</span>
-                        <input type="number" id="bet-mode-3" value="2.0" step="0.1" min="0.1" class="w-20 bg-pirate-bg border border-pirate-border rounded text-center text-sm font-bold text-gold focus:outline-none focus:border-amber-500 py-0.5">
-                        <span class="text-xs text-gold font-bold">TON</span>
-                    </div>
-                    <button onclick="requestMatchmaking(3)" class="bg-amber-600 hover:bg-amber-500 active:scale-95 text-white font-bold text-xs px-4 py-2 rounded-lg transition shadow-lg">
-                        В БОЙ
-                    </button>
-                </div>
-            </div>
-        </section>
-
-        <!-- SCREEN 2: MATCHMAKING WAITING SCREEN -->
-        <section id="screen-search" class="hidden flex-col items-center justify-center py-10 space-y-4">
-            <div class="w-16 h-16 border-4 border-amber-500/20 border-t-amber-500 rounded-full animate-spin"></div>
-            <div class="text-center">
-                <h3 class="font-pirate text-lg text-gold font-bold" id="search-status-title">Ищем соперника...</h3>
-                <p class="text-xs text-gray-400 mt-1">Ставка: <span id="search-bet-val" class="text-white font-bold">0</span> TON</p>
-            </div>
-            <button onclick="cancelMatchmaking()" class="mt-4 text-xs text-gray-400 underline hover:text-white transition">
-                Покинуть очередь
-            </button>
-        </section>
-
-        <!-- SCREEN 3: ACTIVE GAME ARENA -->
-        <section id="screen-game" class="hidden space-y-4">
-            <!-- Bank Status Header -->
-            <div class="bg-pirate-card border border-amber-500/40 rounded-xl py-2 px-4 text-center">
-                <span class="text-[10px] text-gray-400 uppercase tracking-widest block">Призовой банк</span>
-                <span class="font-pirate text-xl font-bold text-gold" id="game-pot-display">0.0 TON</span>
-            </div>
-
-            <!-- Duel Score Cards -->
-            <div class="grid grid-cols-2 gap-3">
-                <!-- Player 1 (Local Player) -->
-                <div id="p1-card" class="bg-pirate-card border border-pirate-border rounded-xl p-3 text-center transition-all">
-                    <div class="text-xs font-bold text-sky-400 mb-1 flex items-center justify-center gap-1">
-                        <span>☠️</span> Вы
-                    </div>
-                    <div id="p1-dice-container" class="h-14 flex items-center justify-center gap-1.5 my-1">
-                        <span class="dice text-3xl">🎲</span>
-                    </div>
-                    <div class="text-xs text-gray-400 font-semibold">
-                        Очки: <span id="p1-score" class="text-white text-base font-bold">0</span>
-                    </div>
-                </div>
-
-                <!-- Player 2 (Opponent) -->
-                <div id="p2-card" class="bg-pirate-card border border-pirate-border rounded-xl p-3 text-center transition-all">
-                    <div class="text-xs font-bold text-rose-400 mb-1 flex items-center justify-center gap-1">
-                        <span>🏴‍☠️</span> Соперник
-                    </div>
-                    <div id="p2-dice-container" class="h-14 flex items-center justify-center gap-1.5 my-1">
-                        <span class="dice text-3xl">🎲</span>
-                    </div>
-                    <div class="text-xs text-gray-400 font-semibold">
-                        Очки: <span id="p2-score" class="text-white text-base font-bold">0</span>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Status Message Bar -->
-            <div id="game-status-text" class="text-center text-xs text-amber-300 font-medium min-h-[24px] px-2 py-1 bg-pirate-inner border border-pirate-border rounded-lg">
-                Ожидание хода...
-            </div>
-
-            <!-- Action Controls -->
-            <div class="space-y-2 pt-2">
-                <button id="roll-btn" onclick="sendRollAction()" class="w-full bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 disabled:opacity-40 disabled:cursor-not-allowed text-white font-pirate font-bold text-lg py-3 rounded-xl shadow-lg active:scale-[0.98] transition">
-                    БРОСИТЬ КОСТИ 🎲
-                </button>
-
-                <div class="flex justify-between items-center px-1">
-                    <button onclick="leaveGameSession()" class="text-xs text-gray-400 underline hover:text-rose-400 transition">
-                        Покинуть стол
-                    </button>
-                </div>
-            </div>
-        </section>
-    </main>
-
-    <!-- Footer info -->
-    <footer class="w-full text-center py-2 border-t border-pirate-border/40 text-[10px] text-gray-500">
-        TON Duel Engine v3.0 • Real-time Socket.io Sync
-    </footer>
+    </div>
 
     <script>
-        // 1. Telegram WebApp Initialization
-        const tg = window.Telegram?.WebApp;
-        if (tg) {
-            tg.expand();
-            tg.ready();
-        }
-
-        // 2. Web Audio Synthesizer (No external audio files)
-        let soundEnabled = true;
-        let audioCtx = null;
-
-        function initAudio() {
-            if (!audioCtx) {
-                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            }
-        }
-
-        function playSound(type) {
-            if (!soundEnabled) return;
-            initAudio();
-            try {
-                if (audioCtx.state === 'suspended') audioCtx.resume();
-                
-                const osc = audioCtx.createOscillator();
-                const gain = audioCtx.createGain();
-                osc.connect(gain);
-                gain.connect(audioCtx.destination);
-
-                if (type === 'roll') {
-                    osc.type = 'square';
-                    osc.frequency.setValueAtTime(160, audioCtx.currentTime);
-                    osc.frequency.exponentialRampToValueAtTime(45, audioCtx.currentTime + 0.12);
-                    gain.gain.setValueAtTime(0.12, audioCtx.currentTime);
-                    gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.12);
-                    osc.start();
-                    osc.stop(audioCtx.currentTime + 0.12);
-                } else if (type === 'win') {
-                    osc.type = 'triangle';
-                    osc.frequency.setValueAtTime(523.25, audioCtx.currentTime); // C5
-                    osc.frequency.exponentialRampToValueAtTime(659.25, audioCtx.currentTime + 0.2); // E5
-                    gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
-                    gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
-                    osc.start();
-                    osc.stop(audioCtx.currentTime + 0.3);
-                }
-            } catch (e) { console.warn("Audio Context error:", e); }
-        }
-
-        function triggerHaptic() {
-            if (tg?.HapticFeedback) {
-                tg.HapticFeedback.impactOccurred('medium');
-            }
-        }
-
-        function toggleSound() {
-            soundEnabled = !soundEnabled;
-            document.getElementById('sound-status').textContent = soundEnabled ? 'ВКЛ' : 'ВЫКЛ';
-            document.getElementById('sound-icon').textContent = soundEnabled ? '🔊' : '🔇';
-        }
-
-        // 3. TON Connect UI SDK Setup
-        let tonConnectUI = null;
-        let userWalletAddress = null;
-
-        window.addEventListener('DOMContentLoaded', () => {
-            try {
-                tonConnectUI = new TON_CONNECT_UI.TonConnectUI({
-                    manifestUrl: 'https://raw.githubusercontent.com/ton-community/tutorials/main/03-client/tonconnect-manifest.json',
-                    buttonRootId: 'ton-connect-btn'
-                });
-
-                tonConnectUI.onStatusChange(wallet => {
-                    if (wallet) {
-                        userWalletAddress = wallet.account.address;
-                        document.getElementById('wallet-warning').classList.add('hidden');
-                        console.log("Wallet connected:", userWalletAddress);
-                    } else {
-                        userWalletAddress = null;
-                        document.getElementById('wallet-warning').classList.remove('hidden');
-                        console.log("Wallet disconnected");
-                    }
-                });
-            } catch (err) {
-                console.error("TON Connect UI Init Error:", err);
-            }
+        // Инициализация TON Connect
+        const tonConnectUI = new TON_CONNECT_UI.TonConnectUI({
+            manifestUrl: window.location.origin + '/tonconnect-manifest.json',
+            buttonRootId: 'ton-connect-btn'
         });
 
-        // 4. Lightweight Gold Coin Confetti Generator
-        const canvas = document.getElementById('confetti-canvas');
-        const ctx = canvas.getContext('2d');
-        let particles = [];
-
-        function resizeCanvas() {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
-        }
-        window.addEventListener('resize', resizeCanvas);
-        resizeCanvas();
-
-        function launchCoinConfetti() {
-            particles = [];
-            for (let i = 0; i < 45; i++) {
-                particles.push({
-                    x: canvas.width / 2,
-                    y: canvas.height / 2,
-                    vx: (Math.random() - 0.5) * 14,
-                    vy: (Math.random() - 0.75) * 16,
-                    size: Math.random() * 6 + 5,
-                    color: Math.random() > 0.3 ? '#fbbf24' : '#d97706',
-                    rotation: Math.random() * 360,
-                    vRot: (Math.random() - 0.5) * 12
-                });
-            }
-            animateConfetti();
-        }
-
-        function animateConfetti() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            let alive = false;
-
-            particles.forEach(p => {
-                p.x += p.vx;
-                p.y += p.vy;
-                p.vy += 0.45;
-                p.rotation += p.vRot;
-
-                if (p.y < canvas.height) alive = true;
-
-                ctx.save();
-                ctx.translate(p.x, p.y);
-                ctx.rotate((p.rotation * Math.PI) / 180);
-                ctx.fillStyle = p.color;
-                ctx.beginPath();
-                ctx.arc(0, 0, p.size, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.restore();
-            });
-
-            if (alive) requestAnimationFrame(animateConfetti);
-        }
-
-        // 5. Socket.io Client & Game Engine Variables
         const socket = io();
+
+        let userWallet = null;
+        let walletBalance = 0; // Баланс в TON
+        let currentRoom = null;
+        let isMyTurn = false;
+        let lastServerSeed = null;
+        let lastCommitmentHash = null;
+        let lastNonce = null;
+
         const diceFaces = ['⚀', '⚁', '⚂', '⚃', '⚄', '⚅'];
 
-        let activeRoom = null;
-        let currentMode = 1;
-        let currentBet = 0.5;
-        let myTurn = false;
-        let myScore = 0;
-        let oppScore = 0;
+        // --- ВНЕШНИЕ MP3 АУДИОФАЙЛЫ ---
+        // Файлы должны лежать в папке public/sounds/ вашего сервера
+        const soundDice = new Audio('/sounds/roll.mp3');
+        const soundWin = new Audio('/sounds/coin.mp3');
 
-        // Socket Connectivity Indicators
-        socket.on('connect', () => {
-            document.getElementById('status-dot').className = "w-2 h-2 rounded-full bg-emerald-500";
-            document.getElementById('status-text').textContent = "В сети";
-        });
-
-        socket.on('disconnect', () => {
-            document.getElementById('status-dot').className = "w-2 h-2 rounded-full bg-rose-500";
-            document.getElementById('status-text').textContent = "Офлайн";
-        });
-
-        // Navigation Helper
-        function showScreen(screenId) {
-            document.getElementById('screen-menu').classList.add('hidden');
-            document.getElementById('screen-search').classList.add('hidden');
-            document.getElementById('screen-game').classList.add('hidden');
-            document.getElementById(screenId).classList.remove('hidden');
+        function playDiceSound() {
+            soundDice.currentTime = 0;
+            soundDice.play().catch(e => console.log("Аудио заблокировано браузером до клика пользователя"));
         }
 
-        // Matchmaking Trigger
-        function requestMatchmaking(mode) {
-            if (!userWalletAddress) {
-                alert("Пожалуйста, подключите TON кошелек для начала игры!");
+        function playWinSound() {
+            soundWin.currentTime = 0;
+            soundWin.play().catch(e => console.log("Аудио заблокировано браузером до клика пользователя"));
+        }
+
+        // --- РАБОТА С БАЛАНСОМ И КОШЕЛЬКОМ ---
+
+        async function fetchWalletBalance(address) {
+            try {
+                const response = await fetch(`https://tonapi.io/v2/accounts/${address}`);
+                const data = await response.json();
+                if (data && data.balance) {
+                    walletBalance = data.balance / 1e9; // Нано-TON в TON
+                    document.getElementById('user-balance').textContent = walletBalance.toFixed(3);
+                    document.getElementById('balance-badge').style.display = 'block';
+
+                    // Устанавливаем ограничение MAX для полей ввода
+                    [1, 2, 3].forEach(m => {
+                        const input = document.getElementById(`bet-${m}`);
+                        input.max = walletBalance;
+                    });
+                }
+            } catch (err) {
+                console.error("Ошибка получения баланса TON:", err);
+            }
+        }
+
+        tonConnectUI.onStatusChange(wallet => {
+            if (wallet) {
+                userWallet = wallet.account.address;
+                fetchWalletBalance(userWallet);
+                socket.emit('register_wallet', { walletAddress: userWallet });
+            } else {
+                userWallet = null;
+                walletBalance = 0;
+                document.getElementById('balance-badge').style.display = 'none';
+            }
+        });
+
+        function startSearch(mode) {
+            if (!userWallet) {
+                alert("Пожалуйста, подключите TON кошелек перед началом игры!");
                 return;
             }
 
-            currentMode = mode;
-            currentBet = parseFloat(document.getElementById(`bet-mode-${mode}`).value) || 0.5;
-            document.getElementById('search-bet-val').textContent = currentBet.toFixed(1);
-            
-            showScreen('screen-search');
+            const betInput = document.getElementById(`bet-${mode}`);
+            const betVal = parseFloat(betInput.value);
 
-            // Emit to server
+            // Проверка 1: Мин. ставка 0.001 TON
+            if (isNaN(betVal) || betVal < 0.001) {
+                alert("Минимальная ставка составляет 0.001 TON!");
+                return;
+            }
+
+            // Проверка 2: Баланс кошелька
+            if (betVal > walletBalance) {
+                alert(`Недостаточно средств на кошельке!\nВаш баланс: ${walletBalance.toFixed(3)} TON\nСтавка: ${betVal} TON`);
+                return;
+            }
+
+            document.getElementById('menu-screen').style.display = 'none';
+            document.getElementById('game-screen').style.display = 'block';
+            document.getElementById('message').textContent = "Поиск оппонента в таверне...";
+
             socket.emit('start_pvp', {
-                mode: currentMode,
-                betAmount: currentBet,
-                walletAddress: userWalletAddress
+                mode: mode,
+                betAmount: betVal,
+                walletAddress: userWallet
             });
         }
 
-        function cancelMatchmaking() {
-            socket.emit('leave_queue');
-            showScreen('screen-menu');
-        }
+        // --- СОБЫТИЯ СЕРВЕРА ---
 
-        // Server Event Handlers
-        socket.on('game_status', (msg) => {
-            document.getElementById('search-status-title').textContent = msg;
+        socket.on('fairness_commitment', (data) => {
+            lastCommitmentHash = data.commitmentHash;
+            lastNonce = data.nonce;
+            document.getElementById('hash-commitment').textContent = data.commitmentHash;
+            document.getElementById('proof-details').style.display = 'none';
         });
 
         socket.on('switch_to_pvp', (data) => {
-            activeRoom = data.room;
-            myTurn = (data.currentTurn === socket.id);
+            currentRoom = data.room;
+            document.getElementById('prize-pool').textContent = (data.betAmount * 2).toFixed(3);
+            document.getElementById('message').textContent = "Дуэль началась!";
             
-            // Set initial scores based on mode
-            if (currentMode === 1) { myScore = 0; oppScore = 0; }
-            else if (currentMode === 2) { myScore = 10; oppScore = 10; }
-            else if (currentMode === 3) { myScore = 100; oppScore = 100; }
-
-            showScreen('screen-game');
-            document.getElementById('game-pot-display').textContent = (currentBet * 2).toFixed(1) + ' TON';
-
-            updateScoresUI();
-            resetDiceUI();
+            isMyTurn = (data.currentTurn === socket.id);
             updateTurnUI();
         });
 
         socket.on('turn_result', (data) => {
-            const isMe = (data.rollerId === socket.id);
-            const diceBox = document.getElementById(isMe ? 'p1-dice-container' : 'p2-dice-container');
+            playDiceSound(); // Воспроизведение MP3 звука броска
             
-            playSound('roll');
-            triggerHaptic();
+            const isMe = (data.rollerId === socket.id);
+            const targetDiceBox = isMe ? document.getElementById('dice-box-1') : document.getElementById('dice-box-2');
+            const targetScore = isMe ? document.getElementById('score-1') : document.getElementById('score-2');
 
-            diceBox.classList.add('dice-rolling');
+            targetDiceBox.innerHTML = '';
+            data.diceValues.forEach(val => {
+                const d = document.createElement('div');
+                d.className = 'dice';
+                d.textContent = diceFaces[val - 1];
+                targetDiceBox.appendChild(d);
+            });
 
-            setTimeout(() => {
-                diceBox.classList.remove('dice-rolling');
-                diceBox.innerHTML = data.diceValues.map(v => `<span class="dice text-3xl">${diceFaces[v - 1]}</span>`).join(' ');
+            targetScore.textContent = data.currentScore;
 
-                if (isMe) myScore = data.currentScore;
-                else oppScore = data.currentScore;
+            lastServerSeed = data.serverSeed;
+            document.getElementById('server-seed-display').textContent = data.serverSeed;
+            document.getElementById('proof-details').style.display = 'block';
 
-                updateScoresUI();
-
-                // Update turn
-                myTurn = (data.nextTurn === socket.id);
-                updateTurnUI();
-            }, 400);
+            isMyTurn = (data.nextTurn === socket.id);
+            updateTurnUI();
+            document.getElementById('message').textContent = isMyTurn ? "Ваш ход!" : "Ход соперника...";
         });
 
         socket.on('game_over', (data) => {
             const isWinner = (data.winnerId === socket.id);
+            if (isWinner) {
+                playWinSound(); // Воспроизведение MP3 победного трека
+                document.getElementById('message').textContent = "🎉 Вы победили! Выигрыш отправлен на кошелек.";
+            } else {
+                document.getElementById('message').textContent = "💀 Вы проиграли заезд.";
+            }
             document.getElementById('roll-btn').disabled = true;
 
-            if (isWinner) {
-                document.getElementById('game-status-text').innerHTML = "<span class='text-gold font-bold'>🎉 ВЫ ПОБЕДИЛИ! БАНК ВАШ!</span>";
-                playSound('win');
-                launchCoinConfetti();
+            if (userWallet) fetchWalletBalance(userWallet);
+        });
+
+        document.getElementById('roll-btn').addEventListener('click', () => {
+            if (!isMyTurn || !currentRoom) return;
+            document.getElementById('roll-btn').disabled = true;
+            socket.emit('roll_dice', { room: currentRoom });
+        });
+
+        function verifyLastRoll() {
+            if (!lastServerSeed || !lastCommitmentHash) return;
+
+            const calculatedHash = CryptoJS.SHA256(`${lastServerSeed}:${socket.id}:${lastNonce}`).toString();
+
+            if (calculatedHash === lastCommitmentHash) {
+                alert("✓ МАТЕМАТИЧЕСКАЯ ПРОВЕРКА ПРОЙДЕНА!\n\nСервер зафиксировал хэш ДО вашего броска и не менял значения.");
             } else {
-                document.getElementById('game-status-text').innerHTML = "<span class='text-rose-400 font-bold'>💀 ПОРАЖЕНИЕ. Удача оставила вас.</span>";
+                alert("❌ Ошибка проверки! Хэши не совпали.");
             }
-        });
-
-        socket.on('opponent_disconnected', () => {
-            alert('Соперник покинул дуэль. Вы признаны победителем!');
-            showScreen('screen-menu');
-        });
-
-        // Player Game Actions
-        function sendRollAction() {
-            if (!myTurn || !activeRoom) return;
-            socket.emit('roll_dice', { room: activeRoom });
-            myTurn = false;
-            updateTurnUI();
         }
 
         function updateTurnUI() {
-            document.getElementById('roll-btn').disabled = !myTurn;
-            document.getElementById('game-status-text').textContent = myTurn ? "Ваш ход! Бросайте кости." : "Ход соперника...";
+            const btn = document.getElementById('roll-btn');
+            const p1 = document.getElementById('p1-card');
+            const p2 = document.getElementById('p2-card');
 
-            const p1Card = document.getElementById('p1-card');
-            const p2Card = document.getElementById('p2-card');
-
-            if (myTurn) {
-                p1Card.classList.add('card-active');
-                p2Card.classList.remove('card-active');
+            btn.disabled = !isMyTurn;
+            if (isMyTurn) {
+                p1.classList.add('active');
+                p2.classList.remove('active');
             } else {
-                p2Card.classList.add('card-active');
-                p1Card.classList.remove('card-active');
+                p2.classList.add('active');
+                p1.classList.remove('active');
             }
         }
 
-        function updateScoresUI() {
-            document.getElementById('p1-score').textContent = myScore;
-            document.getElementById('p2-score').textContent = oppScore;
-        }
-
-        function resetDiceUI() {
-            const count = currentMode === 3 ? 2 : 1;
-            document.getElementById('p1-dice-container').innerHTML = '<span class="dice text-3xl">🎲</span>'.repeat(count);
-            document.getElementById('p2-dice-container').innerHTML = '<span class="dice text-3xl">🎲</span>'.repeat(count);
-        }
-
-        function leaveGameSession() {
-            if (activeRoom) {
-                socket.emit('leave_room', { room: activeRoom });
-            }
-            showScreen('screen-menu');
+        function returnToMenu() {
+            document.getElementById('game-screen').style.display = 'none';
+            document.getElementById('menu-screen').style.display = 'flex';
+            currentRoom = null;
         }
     </script>
 </body>
