@@ -1,136 +1,129 @@
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
+const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
+const io = new Server(server, {
+    cors: { origin: "*" }
+});
 
-app.use(express.static('public'));
+// Раздача статического веб-интерфейса из папки public
+app.use(express.static(path.join(__dirname, 'public')));
 
-// Разделяем очереди по величинам ставок (в TON / nanoTON)
-const matchmakingQueues = {}; 
+// Хранилище очередей поиска и активных комнат
+const queues = { 1: [], 2: [], 3: [] };
 const rooms = {};
 
 io.on('connection', (socket) => {
-    console.log(`Игрок подключился: ${socket.id}`);
+    console.log(`[+] Игрок подключился: ${socket.id}`);
 
-    // Инициализация профиля подключенного клиента
-    socket.userData = {
-        walletAddress: null,
-        room: null
-    };
-
-    // Привязка TON-кошелька при авторизации Web3
-    socket.on('register_wallet', (data) => {
-        socket.userData.walletAddress = data.walletAddress;
-    });
-
-    // Поиск соперника с учетом выбранной ставки
+    // Поиск игры
     socket.on('start_pvp', (data) => {
-        const betAmount = data.betAmount || 0; // Размер ставки (например, 1 TON)
+        const { mode, betAmount, walletAddress } = data;
+        socket.playerData = { mode, betAmount, walletAddress, score: mode === 1 ? 0 : (mode === 2 ? 10 : 100) };
 
-        if (socket.userData.room) return; // Уже в игре
+        // Добавляем в очередь выбранного режима
+        queues[mode].push(socket);
+        socket.emit('game_status', 'Поиск достойного соперника в таверне...');
 
-        if (!matchmakingQueues[betAmount]) {
-            matchmakingQueues[betAmount] = [];
-        }
+        // Если набралось 2 игрока в очереди
+        if (queues[mode].length >= 2) {
+            const p1 = queues[mode].shift();
+            const p2 = queues[mode].shift();
+            const roomId = `room_${p1.id}_${p2.id}`;
 
-        const queue = matchmakingQueues[betAmount];
+            p1.join(roomId);
+            p2.join(roomId);
 
-        // Проверяем, нет ли игрока уже в очереди
-        if (queue.includes(socket)) return;
-
-        if (queue.length === 0) {
-            queue.push(socket);
-            socket.emit('game_status', `Поиск соперника на ставку ${betAmount} TON...`);
-        } else {
-            const opponent = queue.shift();
-
-            if (!opponent.connected) {
-                queue.push(socket);
-                return;
-            }
-
-            const roomName = `room_${opponent.id}_${socket.id}`;
-            
-            opponent.join(roomName);
-            socket.join(roomName);
-
-            opponent.userData.room = roomName;
-            socket.userData.room = roomName;
-
-            rooms[roomName] = {
-                players: [
-                    { id: opponent.id, wallet: opponent.userData.walletAddress, progress: 0 },
-                    { id: socket.id, wallet: socket.userData.walletAddress, progress: 0 }
-                ],
+            rooms[roomId] = {
+                players: [p1, p2],
+                mode: mode,
                 betAmount: betAmount,
-                status: 'waiting_bets' // Ожидаем подтверждения транзакций из блокчейна
+                currentTurnIndex: Math.floor(Math.random() * 2), // Случайный первый ход
+                scores: { [p1.id]: p1.playerData.score, [p2.id]: p2.playerData.score }
             };
 
-            // Отправляем клиентам данные для оплаты ставки через TON Connect
-            io.to(roomName).emit('match_found', {
-                room: roomName,
+            io.to(roomId).emit('switch_to_pvp', {
+                room: roomId,
                 betAmount: betAmount,
-                message: 'Соперник найден! Подтвердите транзакцию ставки в кошельке.'
+                currentTurn: rooms[roomId].players[rooms[roomId].currentTurnIndex].id
             });
         }
     });
 
-    // Действие в гонке (нажатие газ/переключение передач)
-    socket.on('player_action', (data) => {
-        const room = rooms[socket.userData.room];
-        if (!room || room.status !== 'racing') return;
+    // Обработка броска кубиков
+    socket.on('roll_dice', (data) => {
+        const room = rooms[data.room];
+        if (!room) return;
 
-        // Сервер сам рассчитывает ускорение вместо того, чтобы верить клиенту
-        const player = room.players.find(p => p.id === socket.id);
-        if (player) {
-            player.progress += Math.floor(Math.random() * 10) + 5; // Пример механики продвижения
+        const activePlayer = room.players[room.currentTurnIndex];
+        if (activePlayer.id !== socket.id) return; // Проверка очередности хода
 
-            // Транслируем обновленные позиции обоим участникам
-            io.to(socket.userData.room).emit('race_update', {
-                players: room.players.map(p => ({ id: p.id, progress: p.progress }))
-            });
+        let diceValues = [];
+        let rollSum = 0;
 
-            // Проверка финиша
-            if (player.progress >= 100) {
-                room.status = 'finished';
-                io.to(socket.userData.room).emit('race_finished', {
-                    winnerId: socket.id,
-                    winnerWallet: player.wallet
-                });
-                
-                // TODO: Вызов метода смарт-контракта или выдача подписи для TON Escrow
+        if (room.mode === 3) {
+            // Режим 3: Два кубика
+            const d1 = Math.floor(Math.random() * 6) + 1;
+            const d2 = Math.floor(Math.random() * 6) + 1;
+            diceValues = [d1, d2];
+            rollSum = d1 + d2;
+        } else {
+            // Режимы 1 и 2: Один кубик
+            const d1 = Math.floor(Math.random() * 6) + 1;
+            diceValues = [d1];
+            rollSum = d1;
+        }
+
+        // Подсчет счета по правилам режимов
+        if (room.mode === 1) {
+            room.scores[socket.id] += rollSum;
+        } else {
+            room.scores[socket.id] = Math.max(0, room.scores[socket.id] - rollSum);
+        }
+
+        const isGameOver = room.mode === 1 
+            ? (room.scores[p1_id] > 0 && room.scores[p2_id] > 0) // В блице побеждает тот у кого больше за 1 круг
+            : (room.scores[socket.id] === 0); // В гонках побеждает тот у кого 0
+
+        // Следующий ход
+        const nextTurnIndex = (room.currentTurnIndex + 1) % 2;
+        room.currentTurnIndex = nextTurnIndex;
+
+        // Передаем результат броска всем в комнате
+        io.to(data.room).emit('turn_result', {
+            rollerId: socket.id,
+            diceValues: diceValues,
+            currentScore: room.scores[socket.id],
+            nextTurn: room.players[nextTurnIndex].id
+        });
+
+        // Проверка окончания игры
+        if (isGameOver) {
+            let winnerId = socket.id;
+            if (room.mode === 1) {
+                const [p1, p2] = room.players;
+                if (room.scores[p1.id] < room.scores[p2.id]) winnerId = p2.id;
             }
+
+            io.to(data.room).emit('game_over', { winnerId: winnerId });
+            delete rooms[data.room];
         }
     });
 
-    // Обработка дисконнекта
+    // Обработка отключения
     socket.on('disconnect', () => {
-        console.log(`Отключился: ${socket.id}`);
-
-        // Очищаем из очередей ожидания
-        for (const bet in matchmakingQueues) {
-            matchmakingQueues[bet] = matchmakingQueues[bet].filter(s => s !== socket);
-        }
-
-        // Техническое поражение при выходе из активной комнаты
-        const roomName = socket.userData.room;
-        if (roomName && rooms[roomName]) {
-            const room = rooms[roomName];
-            const opponent = room.players.find(p => p.id !== socket.id);
-
-            if (opponent && room.status === 'racing') {
-                io.to(opponent.id).emit('opponent_disconnected', {
-                    message: 'Соперник покинул заезд. Вам зачислена победа!',
-                    winnerWallet: opponent.wallet
-                });
-            }
-            delete rooms[roomName];
-        }
+        console.log(`[-] Игрок отключился: ${socket.id}`);
+        // Удаление из очередей
+        Object.keys(queues).forEach(m => {
+            queues[m] = queues[m].filter(s => s.id !== socket.id);
+        });
     });
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`Сервер запущен на порту ${PORT}`));
+server.listen(PORT, () => {
+    console.log(`🏴‍☠️ Сервер пиратской дуэли запущен на порту ${PORT}`);
+});
